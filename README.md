@@ -22,7 +22,7 @@ manuale in tempo reale**:
 
 ## Login di gruppo e sincronizzazione tra dispositivi
 
-L'app ha un accesso protetto da password per il gruppo (utente `leanime`).
+L'app ha un accesso protetto da password per il gruppo.
 
 - **Senza login**: i dati restano salvati solo su quel dispositivo/browser
   (localStorage). Nessuna condivisione con altri dispositivi.
