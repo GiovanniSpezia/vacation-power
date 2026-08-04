@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Vacation Power — Contatore energia casa vacanza</title>
+<meta name="description" content="Tieni sotto controllo la potenza usata in casa vacanza e non far scattare il salvavita.">
+<meta name="theme-color" content="#14171c">
+
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="bolt">⚡</div>
+      <div>
+        <h1>Vacation Power</h1>
+        <span class="tagline">Non far saltare la luce in vacanza</span>
+      </div>
+    </div>
+    <button id="themeToggle" class="icon-btn" title="Cambia tema" aria-label="Cambia tema">🌙</button>
+  </div>
+
+  <!-- Selettore casa / profilo -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Casa attuale</h2>
+    </div>
+    <div class="profile-row">
+      <select id="profileSelect" aria-label="Seleziona casa"></select>
+      <button id="newProfileBtn" class="icon-btn" title="Nuova casa" aria-label="Nuova casa">＋</button>
+      <button id="renameProfileBtn" class="icon-btn" title="Rinomina" aria-label="Rinomina casa">✎</button>
+      <button id="deleteProfileBtn" class="icon-btn" title="Elimina casa" aria-label="Elimina casa">🗑</button>
+    </div>
+    <p class="small-note">Ogni casa vacanza ha il suo limite di potenza e il suo elenco di elettrodomestici, salvati separatamente.</p>
+  </div>
+
+  <!-- Quadrante -->
+  <div class="card gauge-card">
+    <div id="gaugeRing" class="gauge-ring" data-status="ok">
+      <div class="gauge-center">
+        <div id="gaugeValue" class="gauge-value">0.00</div>
+        <div id="gaugeUnit" class="gauge-unit">kW in uso</div>
+      </div>
+    </div>
+    <div id="gaugeCaption" class="gauge-caption" data-status="ok">Situazione OK</div>
+    <div class="gauge-stats">
+      <div>Disponibile<strong id="statAvailable">–</strong></div>
+      <div>Limite casa<strong id="statLimit">–</strong></div>
+      <div>Accesi<strong id="statCount">0</strong></div>
+    </div>
+  </div>
+
+  <!-- Limite di potenza -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Limite di potenza</h2>
+      <div class="unit-toggle" style="width:120px;">
+        <button id="unitToggleKw" class="active">kW</button>
+        <button id="unitToggleA">A</button>
+      </div>
+    </div>
+    <div class="limit-row">
+      <div>
+        <label for="limitSelect">Valore</label>
+        <select id="limitSelect"></select>
+      </div>
+      <div id="customLimitWrap" style="display:none;">
+        <label for="customLimit">Personalizzato</label>
+        <input type="number" id="customLimit" min="0.1" step="0.1">
+      </div>
+    </div>
+    <p class="small-note">Trovi questo valore sul contatore o sull'interruttore generale (salvavita). In Italia i contratti domestici più comuni sono 3 kW o 4,5 kW; i salvavita riportano spesso l'amperaggio (es. 16 A).</p>
+  </div>
+
+  <!-- Elenco elettrodomestici -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Elettrodomestici</h2>
+    </div>
+    <div id="applianceList" class="appliance-list"></div>
+
+    <div class="add-form">
+      <input type="text" id="newName" placeholder="Nome elettrodomestico">
+      <input type="number" id="newWatt" placeholder="Watt" min="1">
+      <button id="addBtn" class="btn btn-accent">Aggiungi</button>
+    </div>
+    <p class="small-note">Attiva l'interruttore per gli apparecchi accesi in questo momento. La potenza reale è indicata sulla targhetta dell'apparecchio.</p>
+  </div>
+
+  <!-- Backup / dati -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Dati e backup</h2>
+    </div>
+    <div class="footer-actions">
+      <button id="exportProfileBtn" class="btn btn-outline">⬇ Esporta questa casa</button>
+      <button id="exportAllBtn" class="btn btn-outline">⬇ Esporta tutto</button>
+      <button id="importBtn" class="btn btn-outline">⬆ Importa JSON</button>
+      <button id="resetBtn" class="btn btn-outline">↺ Ripristina elenco</button>
+    </div>
+    <input type="file" id="importFileInput" accept="application/json" class="hidden-file-input">
+    <p class="small-note">I dati restano salvati automaticamente sul dispositivo (funziona anche offline). Usa "Esporta" per fare un backup, spostare i dati su un altro telefono, o versionarli nel repository GitHub.</p>
+  </div>
+
+  <footer class="credits">
+    Vacation Power — <a href="https://giospezia.it" target="_blank" rel="noopener noreferrer">By Giospezia ❤️</a><br>
+    è un calcolo manuale basato sugli apparecchi che segnali come accesi.
+  </footer>
+
+</div>
+
+<!-- Modal generico -->
+<div id="modalBackdrop" class="modal-backdrop">
+  <div class="modal">
+    <h3 id="modalTitle">Titolo</h3>
+    <input type="text" id="modalInput" placeholder="">
+    <div class="modal-actions">
+      <button id="modalCancel" class="btn btn-outline">Annulla</button>
+      <button id="modalConfirm" class="btn btn-accent">Conferma</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="js/defaultData.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/gauge.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

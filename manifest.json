@@ -1,0 +1,13 @@
+{
+  "name": "Vacation Power",
+  "short_name": "VacPower",
+  "description": "Contatore virtuale di potenza per case vacanza: evita di far scattare il salvavita.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#14171c",
+  "theme_color": "#14171c",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
