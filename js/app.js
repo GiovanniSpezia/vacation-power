@@ -142,8 +142,15 @@ function showLoginError(message) {
 
 function setGitHubSyncStatus(message, tone = "info") {
   if (!githubSyncStatus) return;
+  // For long messages (esp. auth issues) show a compact message and a
+  // contextual help block below.
   githubSyncStatus.textContent = message;
   githubSyncStatus.dataset.tone = tone;
+  // If it's an authentication problem, append actionable steps.
+  if (tone === "error" && /Requires authentication|401|non valido|invalid/i.test(message)) {
+    const helper = " Per favore: 1) crea un token fine-grained su GitHub con permessi 'Contents: read and write' per questo repo; 2) incollalo nel campo 'Token GitHub'; 3) premi 'Salva config' e poi 'Carica su GitHub'.";
+    githubSyncStatus.textContent = message + helper;
+  }
 }
 
 function refreshGitHubSyncForm() {

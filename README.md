@@ -44,7 +44,18 @@ altri le vedano) serve un token GitHub personale, da incollare una sola
 volta nel pannello "Sincronizzazione GitHub" di quel dispositivo — resta
 solo nel browser locale, non viene mai condiviso altrove. Usa un token
 *fine-grained* con permessi `Contents: read and write` limitato al solo
-repository del progetto.
+   repository del progetto.
+
+### Creare il token GitHub (procedura rapida)
+
+1. Vai su GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens.
+2. Clicca "Generate new token".
+3. Seleziona l'account e scegli il repository usato dall'app.
+4. Nella sezione Permissions seleziona `Contents` → `Read & write` (solo per quel repository).
+5. Imposta una scadenza se lo desideri e genera il token.
+6. Copia il token immediatamente (non sarà mostrato di nuovo) e incollalo nel campo `Token GitHub` nell'app su ogni dispositivo dove vuoi poter salvare i dati.
+
+Importante: il token permette all'app di scrivere nel repository. Non condividerlo: resta salvato solo nel browser del dispositivo.
 
 Se due dispositivi salvano quasi nello stesso istante, l'app scarica
 automaticamente l'ultima versione altrui e riprova a salvare la tua una

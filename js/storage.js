@@ -170,8 +170,14 @@ const Storage = {
     }
 
     if (!response.ok) {
-      const message = await response.text();
-      throw new Error(`Errore GitHub ${response.status}: ${message}`);
+      const body = await response.text();
+      if (response.status === 401) {
+        throw new Error('Errore GitHub 401: Requires authentication. Inserisci un token GitHub valido con permessi di "Contents: read and write" per questo repository.');
+      }
+      if (response.status === 403) {
+        throw new Error('Errore GitHub 403: Accesso negato. Controlla che il token abbia i permessi necessari e che il branch sia corretto.');
+      }
+      throw new Error(`Errore GitHub ${response.status}: ${body}`);
     }
 
     const payload = await response.json();
@@ -207,8 +213,14 @@ const Storage = {
     });
 
     if (!response.ok) {
-      const message = await response.text();
-      throw new Error(`Errore GitHub ${response.status}: ${message}`);
+      const body = await response.text();
+      if (response.status === 401) {
+        throw new Error('Errore GitHub 401: Requires authentication. Il token fornito non è valido o non ha i permessi richiesti.');
+      }
+      if (response.status === 422) {
+        throw new Error('Errore GitHub 422: Contenuto non valido o conflitto. Controlla che il file JSON sia valido e che lo SHA sia corretto.');
+      }
+      throw new Error(`Errore GitHub ${response.status}: ${body}`);
     }
 
     return response.json();
