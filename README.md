@@ -20,6 +20,27 @@ manuale in tempo reale**:
    con lo stato: verde (tutto ok), giallo (vicino al limite), rosso
    (limite superato, spegni qualcosa).
 
+## Sincronizzazione tra dispositivi con GitHub
+
+Se vuoi vedere gli stessi salvataggi su PC e telefono senza usare un
+backend tuo, puoi usare GitHub come archivio condiviso:
+
+1. Crea o usa un repository GitHub privato o pubblico per il progetto.
+2. Apri la sezione "Sincronizzazione GitHub" nell'app.
+3. Inserisci `owner`, `repository`, `branch` e il percorso del file JSON,
+    per esempio `data/vacation-power-state.json`.
+4. Crea un token fine-grained di GitHub con permessi `Contents: read and
+    write` solo su quel repository.
+5. Incolla il token nel campo dedicato e salva la configurazione.
+
+Da quel momento puoi usare i pulsanti per scaricare o caricare lo stato.
+Se attivi la sincronizzazione automatica, ogni modifica locale prova ad
+aggiornare anche il file su GitHub.
+
+Nota: il token viene salvato solo nel browser del dispositivo, non nel
+repository. Su un sito statico non esiste un modo sicuro per fare sync
+scrivendo su GitHub senza una credenziale di questo tipo.
+
 ## Struttura del progetto
 
 ```

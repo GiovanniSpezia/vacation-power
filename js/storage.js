@@ -9,6 +9,7 @@
 
 const STORAGE_KEY = "vacationPowerData_v1";
 const AUTH_SESSION_KEY = "vacationPowerAuthSession_v1";
+const GITHUB_SYNC_KEY = "vacationPowerGitHubSync_v1";
 const AUTH_ACCOUNT = {
   username: "leanime",
   salt: "vacation-power-leanime-salt-v1",
@@ -37,7 +38,8 @@ function defaultState() {
     version: 1,
     activeProfileId: profile.id,
     theme: "dark",
-    profiles: { [profile.id]: profile }
+    profiles: { [profile.id]: profile },
+    updatedAt: new Date().toISOString()
   };
 }
 
@@ -56,6 +58,7 @@ const Storage = {
       if (!parsed.profiles || Object.keys(parsed.profiles).length === 0) {
         return defaultState();
       }
+      if (!parsed.updatedAt) parsed.updatedAt = new Date().toISOString();
       return parsed;
     } catch (e) {
       console.error("Dati salvati corrotti, ripristino i valori di default.", e);
@@ -65,6 +68,130 @@ const Storage = {
 
   save(state) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  },
+
+  loadGitHubSyncConfig() {
+    const raw = localStorage.getItem(GITHUB_SYNC_KEY);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return this._normalizeGitHubSyncConfig(parsed);
+    } catch (e) {
+      return null;
+    }
+  },
+
+  saveGitHubSyncConfig(config) {
+    localStorage.setItem(GITHUB_SYNC_KEY, JSON.stringify(this._normalizeGitHubSyncConfig(config)));
+  },
+
+  clearGitHubSyncConfig() {
+    localStorage.removeItem(GITHUB_SYNC_KEY);
+  },
+
+  _normalizeGitHubSyncConfig(config) {
+    if (!config) return null;
+    const owner = (config.owner || "").trim();
+    const repo = (config.repo || "").trim();
+    const branch = (config.branch || "main").trim() || "main";
+    const path = this._normalizeGitHubPath(config.path || "");
+    const token = (config.token || "").trim();
+    const autoSync = config.autoSync !== false;
+    if (!owner || !repo || !path) return null;
+    return { owner, repo, branch, path, token, autoSync };
+  },
+
+  _normalizeGitHubPath(path) {
+    return String(path || "")
+      .trim()
+      .replace(/^\/+/, "")
+      .replace(/\s+/g, "-");
+  },
+
+  _githubContentsUrl(config) {
+    return `https://api.github.com/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${config.path}?ref=${encodeURIComponent(config.branch || "main")}`;
+  },
+
+  _githubHeaders(token) {
+    const headers = {
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+  },
+
+  _toBase64Utf8(text) {
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return btoa(binary);
+  },
+
+  _fromBase64Utf8(base64) {
+    const binary = atob(base64.replace(/\n/g, ""));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+  },
+
+  async loadGitHubState(config) {
+    const normalized = this._normalizeGitHubSyncConfig(config);
+    if (!normalized) throw new Error("Configurazione GitHub non valida.");
+
+    const response = await fetch(this._githubContentsUrl(normalized), {
+      headers: this._githubHeaders(normalized.token)
+    });
+
+    if (response.status === 404) {
+      return { state: null, sha: null };
+    }
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Errore GitHub ${response.status}: ${message}`);
+    }
+
+    const payload = await response.json();
+    if (!payload.content) {
+      return { state: null, sha: payload.sha || null };
+    }
+
+    const jsonText = this._fromBase64Utf8(payload.content);
+    return {
+      state: JSON.parse(jsonText),
+      sha: payload.sha || null
+    };
+  },
+
+  async saveGitHubState(config, state, sha = null) {
+    const normalized = this._normalizeGitHubSyncConfig(config);
+    if (!normalized) throw new Error("Configurazione GitHub non valida.");
+
+    const payload = {
+      message: `Update vacation-power state ${new Date().toISOString()}`,
+      content: this._toBase64Utf8(JSON.stringify(state, null, 2))
+    };
+
+    if (sha) payload.sha = sha;
+
+    const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(normalized.owner)}/${encodeURIComponent(normalized.repo)}/contents/${normalized.path}`, {
+      method: "PUT",
+      headers: {
+        ...this._githubHeaders(normalized.token),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Errore GitHub ${response.status}: ${message}`);
+    }
+
+    return response.json();
   },
 
   isSessionValid() {

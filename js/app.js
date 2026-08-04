@@ -47,6 +47,18 @@ const importBtn = el("importBtn");
 const importFileInput = el("importFileInput");
 const resetBtn = el("resetBtn");
 
+const githubSyncOwnerInput = el("githubSyncOwner");
+const githubSyncRepoInput = el("githubSyncRepo");
+const githubSyncBranchInput = el("githubSyncBranch");
+const githubSyncPathInput = el("githubSyncPath");
+const githubSyncTokenInput = el("githubSyncToken");
+const githubSyncAutoInput = el("githubSyncAuto");
+const githubSyncSaveBtn = el("githubSyncSaveBtn");
+const githubSyncPullBtn = el("githubSyncPullBtn");
+const githubSyncPushBtn = el("githubSyncPushBtn");
+const githubSyncClearBtn = el("githubSyncClearBtn");
+const githubSyncStatus = el("githubSyncStatus");
+
 const authBtn = el("authBtn");
 const themeToggle = el("themeToggle");
 
@@ -59,6 +71,11 @@ const modalCancel = el("modalCancel");
 const toastEl = el("toast");
 
 Gauge.init(gaugeRing, gaugeValue, gaugeUnit);
+
+let gitHubSyncConfig = Storage.loadGitHubSyncConfig();
+let gitHubRemoteSha = null;
+let gitHubSyncTimer = null;
+let gitHubSyncBusy = false;
 
 // ---------- Auth ----------
 function setAuthState(authed) {
@@ -76,6 +93,109 @@ function clearLoginError() {
 
 function showLoginError(message) {
   if (loginError) loginError.textContent = message;
+}
+
+function setGitHubSyncStatus(message, tone = "info") {
+  if (!githubSyncStatus) return;
+  githubSyncStatus.textContent = message;
+  githubSyncStatus.dataset.tone = tone;
+}
+
+function refreshGitHubSyncForm() {
+  if (!githubSyncOwnerInput || !githubSyncRepoInput || !githubSyncBranchInput || !githubSyncPathInput || !githubSyncTokenInput || !githubSyncAutoInput) return;
+  const cfg = gitHubSyncConfig || {};
+  githubSyncOwnerInput.value = cfg.owner || "";
+  githubSyncRepoInput.value = cfg.repo || "";
+  githubSyncBranchInput.value = cfg.branch || "main";
+  githubSyncPathInput.value = cfg.path || "data/vacation-power-state.json";
+  githubSyncTokenInput.value = cfg.token || "";
+  githubSyncAutoInput.checked = cfg.autoSync !== false;
+}
+
+function readGitHubSyncForm() {
+  return Storage._normalizeGitHubSyncConfig({
+    owner: githubSyncOwnerInput ? githubSyncOwnerInput.value : "",
+    repo: githubSyncRepoInput ? githubSyncRepoInput.value : "",
+    branch: githubSyncBranchInput ? githubSyncBranchInput.value : "main",
+    path: githubSyncPathInput ? githubSyncPathInput.value : "",
+    token: githubSyncTokenInput ? githubSyncTokenInput.value : "",
+    autoSync: githubSyncAutoInput ? githubSyncAutoInput.checked : true
+  });
+}
+
+function queueGitHubAutoPush() {
+  if (!gitHubSyncConfig || gitHubSyncConfig.autoSync === false || !isAuthenticated) return;
+  clearTimeout(gitHubSyncTimer);
+  gitHubSyncTimer = setTimeout(() => {
+    pushStateToGitHub({ silent: true }).catch((error) => {
+      console.error(error);
+      setGitHubSyncStatus(error.message || "Sync GitHub non riuscita.", "error");
+    });
+  }, 1200);
+}
+
+async function pullStateFromGitHub({ silent = false } = {}) {
+  const cfg = gitHubSyncConfig;
+  if (!cfg || gitHubSyncBusy) return null;
+  gitHubSyncBusy = true;
+  try {
+    const remote = await Storage.loadGitHubState(cfg);
+    if (!remote.state) {
+      gitHubRemoteSha = remote.sha || null;
+      if (cfg.autoSync !== false) {
+        await pushStateToGitHub({ silent: true, ignoreBusy: true });
+        if (!silent) showToast("Archivio GitHub creato dal salvataggio locale.");
+        setGitHubSyncStatus("Archivio GitHub creato dal salvataggio locale.", "success");
+      } else {
+        setGitHubSyncStatus("File GitHub non ancora creato.", "warning");
+      }
+      return null;
+    }
+
+    gitHubRemoteSha = remote.sha || null;
+    const remoteUpdatedAt = new Date(remote.state.updatedAt || 0).getTime();
+    const localUpdatedAt = new Date(state.updatedAt || 0).getTime();
+    if (!state.updatedAt || remoteUpdatedAt >= localUpdatedAt) {
+      state = remote.state;
+      Storage.save(state);
+      renderAll();
+      if (!silent) showToast("Dati sincronizzati da GitHub.");
+      setGitHubSyncStatus("Sincronizzato da GitHub.", "success");
+    } else if (cfg.autoSync !== false) {
+      await pushStateToGitHub({ silent: true, ignoreBusy: true });
+      if (!silent) showToast("Dati locali caricati su GitHub.");
+      setGitHubSyncStatus("Dati locali caricati su GitHub.", "success");
+    } else if (!silent) {
+      setGitHubSyncStatus("Hai dati locali più recenti. Caricali su GitHub.", "warning");
+    }
+    return remote.state;
+  } finally {
+    gitHubSyncBusy = false;
+  }
+}
+
+async function pushStateToGitHub({ silent = false, ignoreBusy = false } = {}) {
+  const cfg = gitHubSyncConfig;
+  if (!cfg || (gitHubSyncBusy && !ignoreBusy)) return null;
+  gitHubSyncBusy = true;
+  try {
+    const nextState = {
+      ...state,
+      updatedAt: new Date().toISOString()
+    };
+    state = nextState;
+    Storage.save(state);
+    const result = await Storage.saveGitHubState(cfg, nextState, gitHubRemoteSha);
+    gitHubRemoteSha = result?.content?.sha || result?.content?.commit?.sha || gitHubRemoteSha;
+    if (!silent) showToast("Dati caricati su GitHub.");
+    setGitHubSyncStatus("Sincronizzato con GitHub.", "success");
+    return result;
+  } catch (error) {
+    setGitHubSyncStatus(error.message || "Caricamento su GitHub non riuscito.", "error");
+    throw error;
+  } finally {
+    gitHubSyncBusy = false;
+  }
 }
 
 setAuthState(isAuthenticated);
@@ -159,7 +279,9 @@ function activeProfile() {
 function persist() {
   const p = activeProfile();
   if (p) p.updatedAt = new Date().toISOString();
+  state.updatedAt = new Date().toISOString();
   Storage.save(state);
+  queueGitHubAutoPush();
 }
 
 function wattsToAmps(watts) {
@@ -187,8 +309,53 @@ function applyTheme() {
 themeToggle.addEventListener("click", () => {
   state.theme = state.theme === "dark" ? "light" : "dark";
   applyTheme();
-  Storage.save(state);
+  persist();
 });
+
+if (githubSyncSaveBtn) {
+  githubSyncSaveBtn.addEventListener("click", async () => {
+    const cfg = readGitHubSyncForm();
+    if (!cfg) {
+      setGitHubSyncStatus("Compila owner, repo e file JSON.", "error");
+      return;
+    }
+    gitHubSyncConfig = cfg;
+    Storage.saveGitHubSyncConfig(cfg);
+    setGitHubSyncStatus("Configurazione salvata.", "success");
+    await pullStateFromGitHub({ silent: true }).catch((error) => {
+      console.error(error);
+      setGitHubSyncStatus(error.message || "Impossibile leggere da GitHub.", "error");
+    });
+  });
+}
+
+if (githubSyncPullBtn) {
+  githubSyncPullBtn.addEventListener("click", () => {
+    pullStateFromGitHub({ silent: false }).catch((error) => {
+      console.error(error);
+      setGitHubSyncStatus(error.message || "Impossibile scaricare da GitHub.", "error");
+    });
+  });
+}
+
+if (githubSyncPushBtn) {
+  githubSyncPushBtn.addEventListener("click", () => {
+    pushStateToGitHub({ silent: false }).catch((error) => {
+      console.error(error);
+      setGitHubSyncStatus(error.message || "Impossibile caricare su GitHub.", "error");
+    });
+  });
+}
+
+if (githubSyncClearBtn) {
+  githubSyncClearBtn.addEventListener("click", () => {
+    gitHubSyncConfig = null;
+    gitHubRemoteSha = null;
+    Storage.clearGitHubSyncConfig();
+    refreshGitHubSyncForm();
+    setGitHubSyncStatus("Sincronizzazione GitHub disattivata.", "warning");
+  });
+}
 
 // ---------- Modal generico (usato per nuova casa / rinomina) ----------
 function openModal({ title, placeholder = "", value = "", onConfirm }) {
@@ -550,7 +717,9 @@ importFileInput.addEventListener("change", async (e) => {
       state.profiles[profile.id] = profile;
       state.activeProfileId = profile.id;
     }
+    state.updatedAt = new Date().toISOString();
     Storage.save(state);
+    queueGitHubAutoPush();
     renderAll();
     showToast("Importazione completata.");
   } catch (err) {
@@ -572,8 +741,16 @@ function renderAll() {
 }
 
 applyTheme();
+refreshGitHubSyncForm();
 if (isAuthenticated) {
   renderAll();
+}
+
+if (gitHubSyncConfig && isAuthenticated) {
+  pullStateFromGitHub({ silent: true }).catch((error) => {
+    console.error(error);
+    setGitHubSyncStatus(error.message || "Impossibile sincronizzare con GitHub.", "error");
+  });
 }
 
 if (loginScreen) {

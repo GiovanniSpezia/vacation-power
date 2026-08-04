@@ -720,6 +720,45 @@ select:hover, input[type="text"]:hover, input[type="number"]:hover {
 }
 .footer-actions .btn { flex: 1; min-width: 150px; }
 
+.sync-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sync-grid > div {
+  min-width: 0;
+}
+
+.sync-token-col,
+.sync-auto-row {
+  grid-column: 1 / -1;
+}
+
+.sync-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.sync-checkbox input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.sync-status {
+  transition: color 0.15s ease;
+}
+
+.sync-status[data-tone="success"] { color: var(--ok); }
+.sync-status[data-tone="warning"] { color: var(--warning); }
+.sync-status[data-tone="error"] { color: var(--danger); }
+
 .hidden-file-input { display: none; }
 
 footer.credits {
