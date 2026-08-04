@@ -76,6 +76,51 @@ let gitHubSyncConfig = Storage.loadGitHubSyncConfig();
 let gitHubRemoteSha = null;
 let gitHubSyncTimer = null;
 let gitHubSyncBusy = false;
+let gitHubPollTimer = null;
+
+const GITHUB_POLL_INTERVAL_MS = 20000;
+
+/**
+ * Se l'utente è loggato nel gruppo e su questo dispositivo non è mai
+ * stata impostata una destinazione di sync, la precompila da sola con
+ * i valori predefiniti del gruppo (owner/repo/branch/percorso).
+ * Il token resta vuoto: va incollato una sola volta per dispositivo se
+ * si vuole anche SALVARE le modifiche (per leggere basta il repository
+ * pubblico, senza alcun token).
+ */
+function ensureGroupSyncConfig() {
+  if (!isAuthenticated) return;
+  if (!gitHubSyncConfig) {
+    gitHubSyncConfig = Storage.defaultGroupSyncConfig();
+    Storage.saveGitHubSyncConfig(gitHubSyncConfig);
+  }
+  refreshGitHubSyncForm();
+}
+
+function startGitHubPolling() {
+  stopGitHubPolling();
+  gitHubPollTimer = setInterval(() => {
+    if (!isAuthenticated || !gitHubSyncConfig || document.hidden) return;
+    pullStateFromGitHub({ silent: true }).catch((error) => {
+      console.error(error);
+    });
+  }, GITHUB_POLL_INTERVAL_MS);
+}
+
+function stopGitHubPolling() {
+  if (gitHubPollTimer) {
+    clearInterval(gitHubPollTimer);
+    gitHubPollTimer = null;
+  }
+}
+
+// Se torni sulla scheda del browser (o riaccendi lo schermo), controlla
+// subito se qualcun altro del gruppo ha aggiornato i dati.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && isAuthenticated && gitHubSyncConfig) {
+    pullStateFromGitHub({ silent: true }).catch((error) => console.error(error));
+  }
+});
 
 // ---------- Auth ----------
 function setAuthState(authed) {
@@ -174,7 +219,7 @@ async function pullStateFromGitHub({ silent = false } = {}) {
   }
 }
 
-async function pushStateToGitHub({ silent = false, ignoreBusy = false } = {}) {
+async function pushStateToGitHub({ silent = false, ignoreBusy = false, isRetry = false } = {}) {
   const cfg = gitHubSyncConfig;
   if (!cfg || (gitHubSyncBusy && !ignoreBusy)) return null;
   gitHubSyncBusy = true;
@@ -191,6 +236,19 @@ async function pushStateToGitHub({ silent = false, ignoreBusy = false } = {}) {
     setGitHubSyncStatus("Sincronizzato con GitHub.", "success");
     return result;
   } catch (error) {
+    const isConflict = /409/.test(error.message || "");
+    if (isConflict && !isRetry) {
+      // Qualcun altro ha salvato nel frattempo: scarico la sua versione
+      // più recente e riprovo una sola volta a caricare la mia.
+      gitHubSyncBusy = false;
+      try {
+        await pullStateFromGitHub({ silent: true });
+        return await pushStateToGitHub({ silent, ignoreBusy: true, isRetry: true });
+      } catch (retryError) {
+        setGitHubSyncStatus(retryError.message || "Caricamento su GitHub non riuscito.", "error");
+        throw retryError;
+      }
+    }
     setGitHubSyncStatus(error.message || "Caricamento su GitHub non riuscito.", "error");
     throw error;
   } finally {
@@ -226,6 +284,7 @@ function closeLogin() {
 if (authBtn) {
   authBtn.addEventListener("click", () => {
     if (isAuthenticated) {
+      stopGitHubPolling();
       Storage.clearSession();
       setAuthState(false);
       clearLoginError();
@@ -268,6 +327,18 @@ if (loginForm) {
     closeLogin();
     renderAll();
     showToast("Accesso effettuato.");
+
+    // Appena entri nel gruppo, collega automaticamente questo
+    // dispositivo all'archivio condiviso e scarica subito ciò che
+    // hanno inserito gli altri, poi resta in ascolto periodicamente.
+    ensureGroupSyncConfig();
+    if (gitHubSyncConfig) {
+      pullStateFromGitHub({ silent: true }).catch((error) => {
+        console.error(error);
+        setGitHubSyncStatus(error.message || "Impossibile sincronizzare con GitHub.", "error");
+      });
+      startGitHubPolling();
+    }
   });
 }
 
@@ -396,7 +467,7 @@ function renderProfileSelect() {
 
 profileSelect.addEventListener("change", () => {
   state.activeProfileId = profileSelect.value;
-  Storage.save(state);
+  persist();
   renderAll();
 });
 
@@ -408,7 +479,7 @@ newProfileBtn.addEventListener("click", () => {
       const profile = createEmptyProfile(name);
       state.profiles[profile.id] = profile;
       state.activeProfileId = profile.id;
-      Storage.save(state);
+      persist();
       renderAll();
       showToast("Casa aggiunta: " + name);
     }
@@ -438,7 +509,7 @@ deleteProfileBtn.addEventListener("click", () => {
   if (!confirm(`Eliminare la casa "${p.name}"? L'operazione non è reversibile.`)) return;
   delete state.profiles[p.id];
   state.activeProfileId = Object.keys(state.profiles)[0];
-  Storage.save(state);
+  persist();
   renderAll();
   showToast("Casa eliminata.");
 });
@@ -744,6 +815,7 @@ applyTheme();
 refreshGitHubSyncForm();
 if (isAuthenticated) {
   renderAll();
+  ensureGroupSyncConfig();
 }
 
 if (gitHubSyncConfig && isAuthenticated) {
@@ -751,6 +823,7 @@ if (gitHubSyncConfig && isAuthenticated) {
     console.error(error);
     setGitHubSyncStatus(error.message || "Impossibile sincronizzare con GitHub.", "error");
   });
+  startGitHubPolling();
 }
 
 if (loginScreen) {

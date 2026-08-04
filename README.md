@@ -20,26 +20,43 @@ manuale in tempo reale**:
    con lo stato: verde (tutto ok), giallo (vicino al limite), rosso
    (limite superato, spegni qualcosa).
 
-## Sincronizzazione tra dispositivi con GitHub
+## Login di gruppo e sincronizzazione tra dispositivi
 
-Se vuoi vedere gli stessi salvataggi su PC e telefono senza usare un
-backend tuo, puoi usare GitHub come archivio condiviso:
+L'app ha un accesso protetto da password per il gruppo (utente `leanime`).
 
-1. Crea o usa un repository GitHub privato o pubblico per il progetto.
-2. Apri la sezione "Sincronizzazione GitHub" nell'app.
-3. Inserisci `owner`, `repository`, `branch` e il percorso del file JSON,
-    per esempio `data/vacation-power-state.json`.
-4. Crea un token fine-grained di GitHub con permessi `Contents: read and
-    write` solo su quel repository.
-5. Incolla il token nel campo dedicato e salva la configurazione.
+- **Senza login**: i dati restano salvati solo su quel dispositivo/browser
+  (localStorage). Nessuna condivisione con altri dispositivi.
+- **Con login**: appena entri, il dispositivo si collega automaticamente
+  all'archivio condiviso del gruppo su GitHub — owner, repository, branch
+  e percorso del file sono già configurati di default (vedi
+  `GROUP_SYNC_DEFAULTS` in `js/storage.js`), non serve inserirli a mano.
+  Da quel momento:
+  1. scarica subito lo stato più recente inserito da altri dispositivi;
+  2. ricontrolla automaticamente ogni 20 secondi, più un controllo
+     immediato ogni volta che torni sulla scheda del browser;
+  3. quando accendi/spegni un elettrodomestico, cambi casa o modifichi il
+     limite, l'app carica in automatico la modifica su GitHub, così gli
+     altri dispositivi la vedono al giro di controllo successivo.
 
-Da quel momento puoi usare i pulsanti per scaricare o caricare lo stato.
-Se attivi la sincronizzazione automatica, ogni modifica locale prova ad
-aggiornare anche il file su GitHub.
+Per **vedere** gli aggiornamenti degli altri non serve altro (se il
+repository è pubblico). Per **salvare** le tue modifiche (in modo che gli
+altri le vedano) serve un token GitHub personale, da incollare una sola
+volta nel pannello "Sincronizzazione GitHub" di quel dispositivo — resta
+solo nel browser locale, non viene mai condiviso altrove. Usa un token
+*fine-grained* con permessi `Contents: read and write` limitato al solo
+repository del progetto.
+
+Se due dispositivi salvano quasi nello stesso istante, l'app scarica
+automaticamente l'ultima versione altrui e riprova a salvare la tua una
+volta prima di segnalare un errore.
+
+Puoi comunque usare i campi e i pulsanti manuali del pannello per puntare
+a un repository diverso, o per forzare scarica/carica immediati.
 
 Nota: il token viene salvato solo nel browser del dispositivo, non nel
 repository. Su un sito statico non esiste un modo sicuro per fare sync
-scrivendo su GitHub senza una credenziale di questo tipo.
+scrivendo su GitHub senza una credenziale di questo tipo — è il motivo
+per cui resta comunque un'operazione manuale una tantum per dispositivo.
 
 ## Struttura del progetto
 

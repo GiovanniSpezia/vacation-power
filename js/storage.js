@@ -17,6 +17,21 @@ const AUTH_ACCOUNT = {
 };
 const AUTH_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 
+// Destinazione condivisa di default per il gruppo "leanime": appena si
+// fa login e non c'è già una configurazione salvata su questo
+// dispositivo, l'app punta automaticamente qui, senza bisogno di
+// inserire owner/repo/percorso a mano su ogni telefono/PC.
+// Il token invece resta personale e va incollato una volta per
+// dispositivo (serve solo per SALVARE le modifiche, non per leggerle
+// se il repository è pubblico).
+const GROUP_SYNC_DEFAULTS = {
+  owner: "GiovanniSpezia",
+  repo: "vacation-power",
+  branch: "main",
+  path: "data/group-leanime-state.json",
+  autoSync: true
+};
+
 function generateId() {
   return "p-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
 }
@@ -68,6 +83,11 @@ const Storage = {
 
   save(state) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  },
+
+  /** Configurazione di sync predefinita per il gruppo, senza token (personale per dispositivo). */
+  defaultGroupSyncConfig() {
+    return { ...GROUP_SYNC_DEFAULTS, token: "" };
   },
 
   loadGitHubSyncConfig() {
