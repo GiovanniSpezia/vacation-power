@@ -57,6 +57,7 @@ const githubSyncSaveBtn = el("githubSyncSaveBtn");
 const githubSyncPullBtn = el("githubSyncPullBtn");
 const githubSyncPushBtn = el("githubSyncPushBtn");
 const githubSyncClearBtn = el("githubSyncClearBtn");
+const githubSyncTestBtn = el("githubSyncTestBtn");
 const githubSyncStatus = el("githubSyncStatus");
 
 const authBtn = el("authBtn");
@@ -413,6 +414,29 @@ if (githubSyncPullBtn) {
       console.error(error);
       setGitHubSyncStatus(error.message || "Impossibile scaricare da GitHub.", "error");
     });
+  });
+}
+
+if (githubSyncTestBtn) {
+  githubSyncTestBtn.addEventListener("click", async () => {
+    const cfg = readGitHubSyncForm();
+    if (!cfg) {
+      setGitHubSyncStatus("Compila owner, repo e file JSON.", "error");
+      return;
+    }
+    setGitHubSyncStatus("Verifico token e accesso al file...", "info");
+    try {
+      const remote = await Storage.loadGitHubState(cfg);
+      if (!remote.state) {
+        setGitHubSyncStatus("Token valido: file remoto non trovato (può essere creato con 'Carica su GitHub').", "success");
+      } else {
+        const sha = (remote.sha || (remote.content && remote.content.sha)) || "(sha non disponibile)";
+        setGitHubSyncStatus(`Token valido: file raggiunto. SHA: ${sha}` , "success");
+      }
+    } catch (err) {
+      console.error(err);
+      setGitHubSyncStatus(err.message || "Verifica fallita.", "error");
+    }
   });
 }
 
