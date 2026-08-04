@@ -19,7 +19,32 @@
 </head>
 <body>
 
-<div class="wrap">
+<div id="loginScreen" class="login-screen" aria-hidden="true">
+  <div class="login-panel">
+    <div class="login-orb"></div>
+    <div class="login-kicker">Accesso protetto</div>
+    <h1>Vacation Power</h1>
+    <p class="login-lead">Scegli il tuo gruppo e apri l'accesso solo quando vuoi vedere i salvataggi collegati.</p>
+
+    <form id="loginForm" class="login-form" autocomplete="on">
+      <label for="loginUser">Utente</label>
+      <input id="loginUser" type="text" placeholder="Nome utente del gruppo" autocomplete="username">
+
+      <label for="loginPassword">Password</label>
+      <input id="loginPassword" type="password" placeholder="Inserisci la password" autocomplete="current-password" required>
+
+      <div class="login-actions">
+        <button id="closeLoginBtn" type="button" class="btn btn-outline">Chiudi</button>
+        <button type="submit" class="btn btn-accent">Entra</button>
+      </div>
+      <div id="loginError" class="login-error" aria-live="polite"></div>
+    </form>
+
+    <p class="login-note">L'accesso è gestito lato client con password hashata. Su un sito statico non esiste una protezione forte lato server.</p>
+  </div>
+</div>
+
+<main id="appShell" class="wrap app-shell">
 
   <!-- Top bar -->
   <div class="topbar">
@@ -30,7 +55,10 @@
         <span class="tagline">Non far saltare la luce in vacanza</span>
       </div>
     </div>
-    <button id="themeToggle" class="icon-btn" title="Cambia tema" aria-label="Cambia tema">🌙</button>
+    <div class="topbar-actions">
+      <button id="authBtn" class="icon-btn" title="Accedi" aria-label="Accedi">⎋</button>
+      <button id="themeToggle" class="icon-btn" title="Cambia tema" aria-label="Cambia tema">🌙</button>
+    </div>
   </div>
 
   <!-- Selettore casa / profilo -->
@@ -120,7 +148,7 @@
     è un calcolo manuale basato sugli apparecchi che segnali come accesi.
   </footer>
 
-</div>
+</main>
 
 <!-- Modal generico -->
 <div id="modalBackdrop" class="modal-backdrop">

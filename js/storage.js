@@ -8,6 +8,13 @@
  */
 
 const STORAGE_KEY = "vacationPowerData_v1";
+const AUTH_SESSION_KEY = "vacationPowerAuthSession_v1";
+const AUTH_ACCOUNT = {
+  username: "leanime",
+  salt: "vacation-power-leanime-salt-v1",
+  passwordHash: "2b92d985d527ea9b43907e178f6c5f89b0035c6d0a4d69363b26ded6e0886749"
+};
+const AUTH_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 
 function generateId() {
   return "p-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
@@ -35,6 +42,12 @@ function defaultState() {
 }
 
 const Storage = {
+  async _hashText(text) {
+    const bytes = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  },
+
   load() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
@@ -52,6 +65,37 @@ const Storage = {
 
   save(state) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  },
+
+  isSessionValid() {
+    const raw = localStorage.getItem(AUTH_SESSION_KEY);
+    if (!raw) return false;
+    try {
+      const session = JSON.parse(raw);
+      return session.username === AUTH_ACCOUNT.username && session.expiresAt > Date.now();
+    } catch (e) {
+      return false;
+    }
+  },
+
+  setSession(username) {
+    const session = {
+      username,
+      loggedInAt: Date.now(),
+      expiresAt: Date.now() + AUTH_SESSION_TTL_MS
+    };
+    localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+  },
+
+  clearSession() {
+    localStorage.removeItem(AUTH_SESSION_KEY);
+  },
+
+  async verifyCredentials(username, password) {
+    const normalizedUser = (username || "").trim();
+    if (normalizedUser !== AUTH_ACCOUNT.username) return false;
+    const candidateHash = await this._hashText(`${AUTH_ACCOUNT.salt}|${normalizedUser}|${password || ""}`);
+    return candidateHash === AUTH_ACCOUNT.passwordHash;
   },
 
   /** Scarica il profilo attivo (o tutti) come file .json */

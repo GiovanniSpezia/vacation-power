@@ -5,10 +5,18 @@
  */
 
 let state = Storage.load();
+let isAuthenticated = Storage.isSessionValid();
 
 // ---------- Riferimenti DOM ----------
 const el = (id) => document.getElementById(id);
 
+const loginScreen = el("loginScreen");
+const loginForm = el("loginForm");
+const loginUser = el("loginUser");
+const loginPassword = el("loginPassword");
+const loginError = el("loginError");
+
+const appShell = el("appShell");
 const profileSelect   = el("profileSelect");
 const newProfileBtn   = el("newProfileBtn");
 const renameProfileBtn= el("renameProfileBtn");
@@ -39,6 +47,7 @@ const importBtn = el("importBtn");
 const importFileInput = el("importFileInput");
 const resetBtn = el("resetBtn");
 
+const authBtn = el("authBtn");
 const themeToggle = el("themeToggle");
 
 const modalBackdrop = el("modalBackdrop");
@@ -50,6 +59,97 @@ const modalCancel = el("modalCancel");
 const toastEl = el("toast");
 
 Gauge.init(gaugeRing, gaugeValue, gaugeUnit);
+
+// ---------- Auth ----------
+function setAuthState(authed) {
+  isAuthenticated = authed;
+  if (authBtn) {
+    authBtn.textContent = authed ? "⎋" : "🔐";
+    authBtn.title = authed ? "Esci" : "Accedi";
+    authBtn.setAttribute("aria-label", authed ? "Esci" : "Accedi");
+  }
+}
+
+function clearLoginError() {
+  if (loginError) loginError.textContent = "";
+}
+
+function showLoginError(message) {
+  if (loginError) loginError.textContent = message;
+}
+
+setAuthState(isAuthenticated);
+
+if (loginUser) loginUser.value = "";
+
+if (isAuthenticated) {
+  clearLoginError();
+}
+
+function openLogin() {
+  clearLoginError();
+  if (loginScreen) {
+    loginScreen.classList.add("open");
+    loginScreen.setAttribute("aria-hidden", "false");
+  }
+  if (loginUser) loginUser.focus();
+}
+
+function closeLogin() {
+  clearLoginError();
+  if (loginScreen) {
+    loginScreen.classList.remove("open");
+    loginScreen.setAttribute("aria-hidden", "true");
+  }
+}
+
+if (authBtn) {
+  authBtn.addEventListener("click", () => {
+    if (isAuthenticated) {
+      Storage.clearSession();
+      setAuthState(false);
+      clearLoginError();
+      if (loginPassword) loginPassword.value = "";
+      if (loginUser) loginUser.value = "";
+      closeLogin();
+      showToast("Disconnesso.");
+      return;
+    }
+    openLogin();
+  });
+}
+
+if (loginForm) {
+  loginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    clearLoginError();
+
+    const username = loginUser ? loginUser.value : "";
+    const password = loginPassword ? loginPassword.value : "";
+
+    try {
+      const ok = await Storage.verifyCredentials(username, password);
+      if (!ok) {
+        showLoginError("Credenziali non valide.");
+        if (loginPassword) loginPassword.focus();
+        return;
+      }
+    } catch (err) {
+      console.error(err);
+      showLoginError("Impossibile verificare la password in questo browser.");
+      return;
+    }
+
+    Storage.setSession(username.trim());
+    setAuthState(true);
+    if (loginPassword) loginPassword.value = "";
+    if (loginUser) loginUser.value = "";
+    clearLoginError();
+    closeLogin();
+    renderAll();
+    showToast("Accesso effettuato.");
+  });
+}
 
 // ---------- Helpers stato ----------
 function activeProfile() {
@@ -463,6 +563,7 @@ importFileInput.addEventListener("change", async (e) => {
 
 // ---------- Render generale ----------
 function renderAll() {
+  if (!isAuthenticated) return;
   renderProfileSelect();
   renderUnitToggle();
   renderLimitControls();
@@ -471,4 +572,14 @@ function renderAll() {
 }
 
 applyTheme();
-renderAll();
+if (isAuthenticated) {
+  renderAll();
+}
+
+if (loginScreen) {
+  loginScreen.addEventListener("click", (e) => {
+    if (e.target === loginScreen) {
+      closeLogin();
+    }
+  });
+}
