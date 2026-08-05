@@ -22,13 +22,18 @@
 <div id="loginScreen" class="login-screen" aria-hidden="true">
   <div class="login-panel">
     <div class="login-orb"></div>
-    <div class="login-kicker">Accesso protetto</div>
+    <div class="login-kicker">Accesso di gruppo</div>
     <h1>Vacation Power</h1>
-    <p class="login-lead">Scegli il tuo gruppo e apri l'accesso solo quando vuoi vedere i salvataggi collegati.</p>
+    <p class="login-lead">Entra nel tuo gruppo vacanza per vedere e condividere i dati in tempo reale con gli altri dispositivi, oppure creane uno nuovo.</p>
+
+    <div class="auth-tabs">
+      <button type="button" id="tabLogin" class="auth-tab active">Accedi</button>
+      <button type="button" id="tabRegister" class="auth-tab">Nuovo gruppo</button>
+    </div>
 
     <form id="loginForm" class="login-form" autocomplete="on">
-      <label for="loginUser">Utente</label>
-      <input id="loginUser" type="text" placeholder="Nome utente del gruppo" autocomplete="username">
+      <label for="loginGroupName">Nome del gruppo</label>
+      <input id="loginGroupName" type="text" placeholder="Es. leanime" autocomplete="username">
 
       <label for="loginPassword">Password</label>
       <input id="loginPassword" type="password" placeholder="Inserisci la password" autocomplete="current-password" required>
@@ -40,7 +45,67 @@
       <div id="loginError" class="login-error" aria-live="polite"></div>
     </form>
 
-    <p class="login-note">L'accesso è gestito lato client con password hashata. Su un sito statico non esiste una protezione forte lato server.</p>
+    <form id="registerForm" class="login-form" autocomplete="on" hidden>
+      <label for="registerGroupName">Nome del gruppo</label>
+      <input id="registerGroupName" type="text" placeholder="Es. leanime" autocomplete="username" required>
+
+      <label for="registerOwnerName">Il tuo nome</label>
+      <input id="registerOwnerName" type="text" placeholder="Es. Giovanni" autocomplete="name" required>
+
+      <label for="registerPassword">Password</label>
+      <input id="registerPassword" type="password" placeholder="Almeno 4 caratteri" autocomplete="new-password" required>
+
+      <label for="registerPasswordConfirm">Conferma password</label>
+      <input id="registerPasswordConfirm" type="password" placeholder="Ripeti la password" autocomplete="new-password" required>
+
+      <div class="login-actions">
+        <button id="closeRegisterBtn" type="button" class="btn btn-outline">Chiudi</button>
+        <button type="submit" class="btn btn-accent">Crea gruppo</button>
+      </div>
+      <div id="registerError" class="login-error" aria-live="polite"></div>
+    </form>
+
+    <p class="login-note">L'accesso è gestito lato client con password hashata. Su un sito statico non esiste una protezione forte lato server: usa questo login solo per un piccolo gruppo di fiducia, non per dati sensibili.</p>
+  </div>
+</div>
+
+<div id="profileScreen" class="login-screen" aria-hidden="true">
+  <div class="login-panel">
+    <div class="login-orb"></div>
+    <div class="login-kicker">Il tuo profilo</div>
+    <h1>Impostazioni gruppo</h1>
+    <p class="login-lead">Modifica il nome del gruppo, il tuo nome o la password. Le modifiche sono visibili a tutti i dispositivi del gruppo.</p>
+
+    <form id="profileForm" class="login-form">
+      <label for="profileGroupName">Nome del gruppo (visibile)</label>
+      <input id="profileGroupName" type="text" placeholder="Es. Le Anime" required>
+
+      <label for="profileEmoji">Emoji del gruppo</label>
+      <input id="profileEmoji" type="text" placeholder="🏡" maxlength="4">
+
+      <label for="profileOwnerName">Il tuo nome</label>
+      <input id="profileOwnerName" type="text" placeholder="Es. Giovanni" required>
+
+      <label for="profileSlugDisplay">ID gruppo (usato per il login, non modificabile)</label>
+      <input id="profileSlugDisplay" type="text" disabled>
+
+      <div class="profile-divider">Cambia password (lascia vuoto per non modificarla)</div>
+
+      <label for="profileCurrentPassword">Password attuale</label>
+      <input id="profileCurrentPassword" type="password" autocomplete="current-password" placeholder="Necessaria solo per cambiare la password">
+
+      <label for="profileNewPassword">Nuova password</label>
+      <input id="profileNewPassword" type="password" autocomplete="new-password" placeholder="Almeno 4 caratteri">
+
+      <label for="profileNewPasswordConfirm">Conferma nuova password</label>
+      <input id="profileNewPasswordConfirm" type="password" autocomplete="new-password" placeholder="Ripeti la nuova password">
+
+      <div class="login-actions">
+        <button id="closeProfileBtn" type="button" class="btn btn-outline">Chiudi</button>
+        <button type="submit" class="btn btn-accent">Salva modifiche</button>
+      </div>
+      <div id="profileError" class="login-error" aria-live="polite"></div>
+    </form>
   </div>
 </div>
 
@@ -57,6 +122,7 @@
     </div>
     <div class="topbar-actions">
       <span id="syncIndicator" class="sync-indicator" hidden></span>
+      <button id="profileBtn" class="icon-btn" title="Profilo gruppo" aria-label="Profilo gruppo" hidden>👤</button>
       <button id="authBtn" class="icon-btn" title="Accedi" aria-label="Accedi">🔐</button>
       <button id="themeToggle" class="icon-btn" title="Cambia tema" aria-label="Cambia tema">🌙</button>
     </div>
@@ -148,7 +214,11 @@
     <div class="card-header">
       <h2>Login di gruppo</h2>
     </div>
-    <p class="small-note">Senza accesso, i dati restano salvati solo su questo dispositivo. Fai login con l'account del gruppo per vedere e condividere in tempo reale gli stessi dati con tutti gli altri dispositivi collegati con lo stesso account.</p>
+    <p id="groupStatusText" class="small-note">Senza accesso, i dati restano salvati solo su questo dispositivo. Fai login (o registra un nuovo gruppo) per vedere e condividere in tempo reale gli stessi dati con tutti gli altri dispositivi collegati con lo stesso gruppo.</p>
+    <div class="footer-actions">
+      <button id="openAuthBtn" class="btn btn-outline">🔐 Accedi o registra un gruppo</button>
+      <button id="openProfileBtn" class="btn btn-outline" hidden>👤 Profilo del gruppo</button>
+    </div>
   </div>
 
   <footer class="credits">
@@ -179,6 +249,7 @@
 <script src="js/storage.js"></script>
 <script src="js/firebaseConfig.js"></script>
 <script src="js/groupSync.js"></script>
+<script src="js/groupAuth.js"></script>
 <script src="js/gauge.js"></script>
 <script src="js/app.js"></script>
 </body>

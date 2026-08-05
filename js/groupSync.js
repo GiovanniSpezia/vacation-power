@@ -1,26 +1,33 @@
 /**
  * groupSync.js
  * Sincronizzazione in tempo reale tra tutti i dispositivi che fanno
- * login con l'account di gruppo. Usa Firebase Realtime Database
+ * login nello stesso gruppo vacanza. Usa Firebase Realtime Database
  * (caricato via CDN in index.html) con la configurazione definita in
  * js/firebaseConfig.js.
+ *
+ * Ogni gruppo registrato ha il proprio percorso "groups/{groupSlug}",
+ * quindi più gruppi diversi possono usare la stessa app senza vedere i
+ * dati gli uni degli altri.
  *
  * Comportamento:
  * - Senza login: questo modulo non viene mai usato, i dati restano
  *   solo in localStorage su quel dispositivo (per-dispositivo).
- * - Con login: appena connesso, riceve subito lo stato più recente del
- *   gruppo e resta in ascolto in tempo reale: qualsiasi modifica fatta
- *   da un altro dispositivo loggato arriva qui appena viene salvata,
- *   senza bisogno di ricaricare la pagina o aspettare un intervallo.
+ * - Con login: appena connesso al proprio gruppo, riceve subito lo
+ *   stato più recente e resta in ascolto in tempo reale: qualsiasi
+ *   modifica fatta da un altro dispositivo dello stesso gruppo arriva
+ *   qui appena viene salvata, senza ricaricare la pagina.
  *
  * Non serve gestire manualmente i conflitti: il database mantiene
  * sempre e solo l'ultima versione scritta, e la notifica a tutti i
- * dispositivi in ascolto.
+ * dispositivi in ascolto sullo stesso gruppo.
  */
+
+const GROUPS_PATH = "groups";
 
 const GroupSync = {
   _ref: null,
   _pushTimer: null,
+  _slug: null,
 
   isConfigured() {
     const cfg = typeof FIREBASE_CONFIG !== "undefined" ? FIREBASE_CONFIG : null;
@@ -31,25 +38,32 @@ const GroupSync = {
     return typeof firebase !== "undefined" && this.isConfigured();
   },
 
+  ensureApp() {
+    if (!this.isAvailable()) {
+      throw new Error("Sincronizzazione non configurata. Compila js/firebaseConfig.js.");
+    }
+    if (!firebase.apps || !firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
+  },
+
   /**
-   * Avvia la sincronizzazione per il gruppo.
+   * Avvia la sincronizzazione per un gruppo specifico.
+   * @param {string} groupSlug - identificativo del gruppo (es. "leanime").
    * @param {(remoteState: object) => void} onRemoteChange - chiamata ogni
    *   volta che il database condiviso ha un nuovo stato.
    * @param {object} seedState - stato locale attuale: viene pubblicato
    *   come base SOLO se il gruppo non ha ancora nessun dato salvato
-   *   (es. primo utilizzo in assoluto).
+   *   (es. primissimo utilizzo di quel gruppo).
    */
-  start(onRemoteChange, seedState) {
+  start(groupSlug, onRemoteChange, seedState) {
     if (!this.isAvailable()) {
-      console.warn("Firebase non configurato: la sincronizzazione di gruppo è disattivata. Compila js/firebaseConfig.js.");
+      console.warn("Firebase non configurato: la sincronizzazione di gruppo è disattivata.");
       return false;
     }
-
-    if (!firebase.apps || !firebase.apps.length) {
-      firebase.initializeApp(FIREBASE_CONFIG);
-    }
-
-    this._ref = firebase.database().ref(FIREBASE_GROUP_PATH);
+    this.ensureApp();
+    this._slug = groupSlug;
+    this._ref = firebase.database().ref(`${GROUPS_PATH}/${groupSlug}`);
 
     this._ref.once("value").then((snapshot) => {
       if (!snapshot.exists() && seedState) {
@@ -70,6 +84,7 @@ const GroupSync = {
       this._ref.off();
       this._ref = null;
     }
+    this._slug = null;
     clearTimeout(this._pushTimer);
   },
 

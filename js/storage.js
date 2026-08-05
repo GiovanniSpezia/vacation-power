@@ -2,21 +2,18 @@
  * storage.js
  * Gestisce il salvataggio dei dati:
  * - in locale (localStorage), sempre e comunque, per ogni dispositivo;
- * - la definizione dell'account del gruppo usato per il login condiviso
- *   (la sincronizzazione vera e propria tra dispositivi loggati è
- *   gestita da js/groupSync.js tramite Firebase).
- * Gestisce inoltre l'esportazione/importazione manuale in formato JSON,
- * utile per backup o per spostare i dati a mano tra dispositivi.
+ * - l'esportazione/importazione manuale in formato JSON, utile per
+ *   backup o per spostare i dati a mano tra dispositivi.
+ *
+ * L'accesso/registrazione del gruppo vacanza e il profilo sono gestiti
+ * da js/groupAuth.js (Firebase Authentication). La sincronizzazione in
+ * tempo reale dello stato dell'app è gestita da js/groupSync.js
+ * (Firebase Realtime Database).
  */
 
 const STORAGE_KEY = "vacationPowerData_v1";
-const AUTH_SESSION_KEY = "vacationPowerAuthSession_v1";
-const AUTH_ACCOUNT = {
-  username: "leanime",
-  salt: "vacation-power-leanime-salt-v1",
-  passwordHash: "2b92d985d527ea9b43907e178f6c5f89b0035c6d0a4d69363b26ded6e0886749"
-};
-const AUTH_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const SESSION_KEY = "vacationPowerSession_v1";
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 giorni
 
 function generateId() {
   return "p-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
@@ -45,12 +42,6 @@ function defaultState() {
 }
 
 const Storage = {
-  async _hashText(text) {
-    const bytes = new TextEncoder().encode(text);
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
-    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
-  },
-
   /** Stato locale del dispositivo (usato sempre come cache, con o senza login) */
   load() {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -72,35 +63,29 @@ const Storage = {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   },
 
-  isSessionValid() {
-    const raw = localStorage.getItem(AUTH_SESSION_KEY);
-    if (!raw) return false;
+  /** Ricorda quale gruppo è collegato su questo dispositivo, per restare loggati tra una visita e l'altra. */
+  getSession() {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
     try {
       const session = JSON.parse(raw);
-      return session.username === AUTH_ACCOUNT.username && session.expiresAt > Date.now();
+      if (!session.slug || session.expiresAt < Date.now()) return null;
+      return session;
     } catch (e) {
-      return false;
+      return null;
     }
   },
 
-  setSession(username) {
-    const session = {
-      username,
+  setSession(slug) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      slug,
       loggedInAt: Date.now(),
-      expiresAt: Date.now() + AUTH_SESSION_TTL_MS
-    };
-    localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+      expiresAt: Date.now() + SESSION_TTL_MS
+    }));
   },
 
   clearSession() {
-    localStorage.removeItem(AUTH_SESSION_KEY);
-  },
-
-  async verifyCredentials(username, password) {
-    const normalizedUser = (username || "").trim();
-    if (normalizedUser !== AUTH_ACCOUNT.username) return false;
-    const candidateHash = await this._hashText(`${AUTH_ACCOUNT.salt}|${normalizedUser}|${password || ""}`);
-    return candidateHash === AUTH_ACCOUNT.passwordHash;
+    localStorage.removeItem(SESSION_KEY);
   },
 
   /** Scarica il profilo attivo (o tutti) come file .json */

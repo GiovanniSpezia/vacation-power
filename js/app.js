@@ -3,24 +3,50 @@
  * Logica principale: gestisce lo stato, il rendering dell'interfaccia
  * e tutti gli eventi utente.
  *
- * Sincronizzazione: senza login l'app funziona sempre e solo in locale
- * (localStorage, per dispositivo). Con login nell'account di gruppo,
- * ogni modifica viene anche pubblicata in tempo reale sul database
- * condiviso (js/groupSync.js), e ogni modifica fatta da altri
- * dispositivi loggati arriva qui automaticamente.
+ * Account di gruppo: gestiti da js/groupAuth.js (registrazione, login,
+ * profilo). Sincronizzazione dati in tempo reale: js/groupSync.js.
+ * Senza login l'app funziona sempre e solo in locale (localStorage,
+ * per dispositivo).
  */
 
 let state = Storage.load();
-let isAuthenticated = Storage.isSessionValid();
+let session = Storage.getSession();
+let isAuthenticated = !!session;
+let currentGroup = session ? { slug: session.slug } : null; // { slug, groupName, ownerName, emoji }
 
 // ---------- Riferimenti DOM ----------
 const el = (id) => document.getElementById(id);
 
+// Login / registrazione
 const loginScreen = el("loginScreen");
+const tabLogin = el("tabLogin");
+const tabRegister = el("tabRegister");
 const loginForm = el("loginForm");
-const loginUser = el("loginUser");
+const loginGroupName = el("loginGroupName");
 const loginPassword = el("loginPassword");
 const loginError = el("loginError");
+const closeLoginBtn = el("closeLoginBtn");
+
+const registerForm = el("registerForm");
+const registerGroupName = el("registerGroupName");
+const registerOwnerName = el("registerOwnerName");
+const registerPassword = el("registerPassword");
+const registerPasswordConfirm = el("registerPasswordConfirm");
+const registerError = el("registerError");
+const closeRegisterBtn = el("closeRegisterBtn");
+
+// Profilo
+const profileScreen = el("profileScreen");
+const profileForm = el("profileForm");
+const profileGroupName = el("profileGroupName");
+const profileEmoji = el("profileEmoji");
+const profileOwnerName = el("profileOwnerName");
+const profileSlugDisplay = el("profileSlugDisplay");
+const profileCurrentPassword = el("profileCurrentPassword");
+const profileNewPassword = el("profileNewPassword");
+const profileNewPasswordConfirm = el("profileNewPasswordConfirm");
+const profileError = el("profileError");
+const closeProfileBtn = el("closeProfileBtn");
 
 const appShell = el("appShell");
 const profileSelect   = el("profileSelect");
@@ -54,8 +80,13 @@ const importFileInput = el("importFileInput");
 const resetBtn = el("resetBtn");
 
 const authBtn = el("authBtn");
+const profileBtn = el("profileBtn");
 const syncIndicator = el("syncIndicator");
 const themeToggle = el("themeToggle");
+
+const groupStatusText = el("groupStatusText");
+const openAuthBtn = el("openAuthBtn");
+const openProfileBtn = el("openProfileBtn");
 
 const modalBackdrop = el("modalBackdrop");
 const modalTitle = el("modalTitle");
@@ -84,18 +115,16 @@ function handleRemoteGroupState(remoteState) {
   state = remoteState;
   Storage.save(state);
   renderAll();
-  setSyncIndicator("Sincronizzato con il gruppo", "success");
+  setSyncIndicator(`Sincronizzato: ${currentGroup?.groupName || currentGroup?.slug || "gruppo"}`, "success");
 }
 
-function connectGroupSync() {
-  if (!isAuthenticated) return;
+function connectGroupSync(slug) {
   if (!GroupSync.isAvailable()) {
     setSyncIndicator("Sync di gruppo non configurata", "warning");
     return;
   }
   setSyncIndicator("Connessione al gruppo...", "info");
-  GroupSync.start(handleRemoteGroupState, state);
-  setSyncIndicator("Sincronizzato con il gruppo", "success");
+  GroupSync.start(slug, handleRemoteGroupState, state);
 }
 
 function disconnectGroupSync() {
@@ -103,97 +132,235 @@ function disconnectGroupSync() {
   setSyncIndicator(null);
 }
 
-// ---------- Auth ----------
-function setAuthState(authed) {
-  isAuthenticated = authed;
-  if (authBtn) {
-    authBtn.textContent = authed ? "⎋" : "🔐";
-    authBtn.title = authed ? "Esci dal gruppo" : "Accedi al gruppo";
-    authBtn.setAttribute("aria-label", authed ? "Esci dal gruppo" : "Accedi al gruppo");
+// ---------- Stato di accesso (UI) ----------
+function updateGroupUi() {
+  if (isAuthenticated && currentGroup) {
+    if (authBtn) {
+      authBtn.textContent = "⎋";
+      authBtn.title = "Esci dal gruppo";
+      authBtn.setAttribute("aria-label", "Esci dal gruppo");
+    }
+    if (profileBtn) profileBtn.hidden = false;
+    if (openProfileBtn) openProfileBtn.hidden = false;
+    if (openAuthBtn) openAuthBtn.hidden = true;
+    if (groupStatusText) {
+      const label = currentGroup.groupName || currentGroup.slug;
+      const owner = currentGroup.ownerName ? ` — accesso come ${currentGroup.ownerName}` : "";
+      groupStatusText.textContent = `Collegato al gruppo "${label}"${owner}. Le modifiche sono condivise in tempo reale con tutti i dispositivi di questo gruppo.`;
+    }
+  } else {
+    if (authBtn) {
+      authBtn.textContent = "🔐";
+      authBtn.title = "Accedi al gruppo";
+      authBtn.setAttribute("aria-label", "Accedi al gruppo");
+    }
+    if (profileBtn) profileBtn.hidden = true;
+    if (openProfileBtn) openProfileBtn.hidden = true;
+    if (openAuthBtn) openAuthBtn.hidden = false;
+    if (groupStatusText) {
+      groupStatusText.textContent = "Senza accesso, i dati restano salvati solo su questo dispositivo. Fai login (o registra un nuovo gruppo) per vedere e condividere in tempo reale gli stessi dati con tutti gli altri dispositivi collegati con lo stesso gruppo.";
+    }
   }
 }
 
-function clearLoginError() {
-  if (loginError) loginError.textContent = "";
-}
+// ---------- Login / Registrazione: apertura pannelli ----------
+function clearLoginError() { if (loginError) loginError.textContent = ""; }
+function showLoginError(msg) { if (loginError) loginError.textContent = msg; }
+function clearRegisterError() { if (registerError) registerError.textContent = ""; }
+function showRegisterError(msg) { if (registerError) registerError.textContent = msg; }
+function clearProfileError() { if (profileError) profileError.textContent = ""; }
+function showProfileError(msg) { if (profileError) profileError.textContent = msg; }
 
-function showLoginError(message) {
-  if (loginError) loginError.textContent = message;
-}
-
-setAuthState(isAuthenticated);
-
-if (loginUser) loginUser.value = "";
-
-function openLogin() {
+function showAuthTab(tab) {
+  const isLogin = tab === "login";
+  if (tabLogin) tabLogin.classList.toggle("active", isLogin);
+  if (tabRegister) tabRegister.classList.toggle("active", !isLogin);
+  if (loginForm) loginForm.hidden = !isLogin;
+  if (registerForm) registerForm.hidden = isLogin;
   clearLoginError();
+  clearRegisterError();
+}
+
+function openAuthScreen(tab = "login") {
+  showAuthTab(tab);
   if (loginScreen) {
     loginScreen.classList.add("open");
     loginScreen.setAttribute("aria-hidden", "false");
   }
-  if (loginUser) loginUser.focus();
+  const focusTarget = tab === "login" ? loginGroupName : registerGroupName;
+  if (focusTarget) setTimeout(() => focusTarget.focus(), 60);
 }
 
-function closeLogin() {
+function closeAuthScreen() {
   clearLoginError();
+  clearRegisterError();
   if (loginScreen) {
     loginScreen.classList.remove("open");
     loginScreen.setAttribute("aria-hidden", "true");
   }
 }
 
+function openProfileScreen() {
+  if (!currentGroup) return;
+  clearProfileError();
+  if (profileGroupName) profileGroupName.value = currentGroup.groupName || "";
+  if (profileEmoji) profileEmoji.value = currentGroup.emoji || "🏡";
+  if (profileOwnerName) profileOwnerName.value = currentGroup.ownerName || "";
+  if (profileSlugDisplay) profileSlugDisplay.value = currentGroup.slug || "";
+  if (profileCurrentPassword) profileCurrentPassword.value = "";
+  if (profileNewPassword) profileNewPassword.value = "";
+  if (profileNewPasswordConfirm) profileNewPasswordConfirm.value = "";
+  if (profileScreen) {
+    profileScreen.classList.add("open");
+    profileScreen.setAttribute("aria-hidden", "false");
+  }
+}
+
+function closeProfileScreen() {
+  clearProfileError();
+  if (profileScreen) {
+    profileScreen.classList.remove("open");
+    profileScreen.setAttribute("aria-hidden", "true");
+  }
+}
+
+if (tabLogin) tabLogin.addEventListener("click", () => showAuthTab("login"));
+if (tabRegister) tabRegister.addEventListener("click", () => showAuthTab("register"));
+if (closeLoginBtn) closeLoginBtn.addEventListener("click", closeAuthScreen);
+if (closeRegisterBtn) closeRegisterBtn.addEventListener("click", closeAuthScreen);
+if (closeProfileBtn) closeProfileBtn.addEventListener("click", closeProfileScreen);
+if (loginScreen) loginScreen.addEventListener("click", (e) => { if (e.target === loginScreen) closeAuthScreen(); });
+if (profileScreen) profileScreen.addEventListener("click", (e) => { if (e.target === profileScreen) closeProfileScreen(); });
+
 if (authBtn) {
   authBtn.addEventListener("click", () => {
     if (isAuthenticated) {
-      disconnectGroupSync();
-      Storage.clearSession();
-      setAuthState(false);
-      clearLoginError();
-      if (loginPassword) loginPassword.value = "";
-      if (loginUser) loginUser.value = "";
-      closeLogin();
-      showToast("Disconnesso dal gruppo. I dati restano salvati su questo dispositivo.");
+      logoutFromGroup();
       return;
     }
-    openLogin();
+    openAuthScreen("login");
   });
+}
+if (openAuthBtn) openAuthBtn.addEventListener("click", () => openAuthScreen("login"));
+if (profileBtn) profileBtn.addEventListener("click", openProfileScreen);
+if (openProfileBtn) openProfileBtn.addEventListener("click", openProfileScreen);
+
+// ---------- Login ----------
+async function loginToGroup(groupName, password) {
+  const account = await GroupAuth.login(groupName, password);
+  await afterAuthSuccess(account);
 }
 
 if (loginForm) {
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     clearLoginError();
-
-    const username = loginUser ? loginUser.value : "";
+    const groupName = loginGroupName ? loginGroupName.value : "";
     const password = loginPassword ? loginPassword.value : "";
+    if (!groupName.trim()) { showLoginError("Inserisci il nome del gruppo."); return; }
+    if (!password) { showLoginError("Inserisci la password."); return; }
 
+    const submitBtn = loginForm.querySelector("button[type=submit]");
+    if (submitBtn) submitBtn.disabled = true;
     try {
-      const ok = await Storage.verifyCredentials(username, password);
-      if (!ok) {
-        showLoginError("Credenziali non valide.");
-        if (loginPassword) loginPassword.focus();
-        return;
-      }
+      await loginToGroup(groupName, password);
+      if (loginPassword) loginPassword.value = "";
+      closeAuthScreen();
+      showToast("Accesso effettuato: sincronizzazione con il gruppo attiva.");
     } catch (err) {
       console.error(err);
-      showLoginError("Impossibile verificare la password in questo browser.");
-      return;
+      showLoginError(err.message || "Accesso non riuscito.");
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
-
-    Storage.setSession(username.trim());
-    setAuthState(true);
-    if (loginPassword) loginPassword.value = "";
-    if (loginUser) loginUser.value = "";
-    clearLoginError();
-    closeLogin();
-    showToast("Accesso effettuato: sincronizzazione con il gruppo attiva.");
-    connectGroupSync();
   });
 }
 
-if (loginScreen) {
-  loginScreen.addEventListener("click", (e) => {
-    if (e.target === loginScreen) closeLogin();
+// ---------- Registrazione ----------
+if (registerForm) {
+  registerForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    clearRegisterError();
+
+    const groupName = registerGroupName ? registerGroupName.value : "";
+    const ownerName = registerOwnerName ? registerOwnerName.value : "";
+    const password = registerPassword ? registerPassword.value : "";
+    const confirmPassword = registerPasswordConfirm ? registerPasswordConfirm.value : "";
+
+    const submitBtn = registerForm.querySelector("button[type=submit]");
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      const account = await GroupAuth.register({ groupName, ownerName, password, confirmPassword, emoji: "🏡" });
+      await afterAuthSuccess(account);
+      registerForm.reset();
+      closeAuthScreen();
+      showToast("Gruppo creato! Sincronizzazione attiva.");
+    } catch (err) {
+      console.error(err);
+      showRegisterError(err.message || "Registrazione non riuscita.");
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  });
+}
+
+/** Dopo login o registrazione riuscita: salva sessione, collega lo stato, avvia la sync. */
+async function afterAuthSuccess(account) {
+  currentGroup = account;
+  isAuthenticated = true;
+  Storage.setSession(account.slug);
+  updateGroupUi();
+  connectGroupSync(account.slug);
+}
+
+function logoutFromGroup() {
+  disconnectGroupSync();
+  Storage.clearSession();
+  isAuthenticated = false;
+  currentGroup = null;
+  updateGroupUi();
+  showToast("Disconnesso dal gruppo. I dati restano salvati su questo dispositivo.");
+}
+
+// ---------- Profilo ----------
+if (profileForm) {
+  profileForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    clearProfileError();
+    if (!currentGroup) return;
+
+    const groupName = profileGroupName ? profileGroupName.value : "";
+    const emoji = profileEmoji ? profileEmoji.value : "🏡";
+    const ownerName = profileOwnerName ? profileOwnerName.value : "";
+    const currentPassword = profileCurrentPassword ? profileCurrentPassword.value : "";
+    const newPassword = profileNewPassword ? profileNewPassword.value : "";
+    const newPasswordConfirm = profileNewPasswordConfirm ? profileNewPasswordConfirm.value : "";
+
+    const submitBtn = profileForm.querySelector("button[type=submit]");
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      const updated = await GroupAuth.updateProfile(currentGroup.slug, { groupName, ownerName, emoji });
+      currentGroup = updated;
+
+      if (newPassword || newPasswordConfirm || currentPassword) {
+        if (!currentPassword) throw new Error("Inserisci la password attuale per cambiarla.");
+        await GroupAuth.changePassword(currentGroup.slug, currentPassword, newPassword, newPasswordConfirm);
+        showToast("Profilo e password aggiornati.");
+      } else {
+        showToast("Profilo aggiornato.");
+      }
+
+      updateGroupUi();
+      if (syncIndicator && !syncIndicator.hidden) {
+        setSyncIndicator(`Sincronizzato: ${currentGroup.groupName || currentGroup.slug}`, "success");
+      }
+      closeProfileScreen();
+    } catch (err) {
+      console.error(err);
+      showProfileError(err.message || "Impossibile salvare le modifiche.");
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
   });
 }
 
@@ -207,7 +374,7 @@ function persist() {
   if (p) p.updatedAt = new Date().toISOString();
   state.updatedAt = new Date().toISOString();
   Storage.save(state);
-  if (isAuthenticated) {
+  if (isAuthenticated && currentGroup) {
     GroupSync.queuePush(state);
   }
 }
@@ -618,7 +785,21 @@ function renderAll() {
 // ---------- Avvio ----------
 applyTheme();
 renderAll();
+updateGroupUi();
 
-if (isAuthenticated) {
-  connectGroupSync();
+if (isAuthenticated && currentGroup) {
+  // Sessione ricordata da una visita precedente: recupero i dati
+  // aggiornati del gruppo (nome, proprietario, ecc.) e riconnetto la sync.
+  GroupAuth.getAccount(currentGroup.slug)
+    .then((account) => {
+      if (account) {
+        currentGroup = account;
+        updateGroupUi();
+      }
+      connectGroupSync(currentGroup.slug);
+    })
+    .catch((err) => {
+      console.error(err);
+      connectGroupSync(currentGroup.slug);
+    });
 }

@@ -20,23 +20,35 @@ manuale in tempo reale**:
    con lo stato: verde (tutto ok), giallo (vicino al limite), rosso
    (limite superato, spegni qualcosa).
 
-## Salvataggio dei dati: locale vs gruppo
+## Account di gruppo: registrazione, login e profilo
 
 - **Senza login**: l'app funziona comunque, sempre. I dati (case,
   elettrodomestici, limiti) restano salvati solo su quel dispositivo/
   browser (`localStorage`). Ogni telefono/PC ha i propri dati,
   indipendenti dagli altri.
-- **Con login** (account di gruppo `leanime`): tutti i dispositivi che
-  fanno accesso con lo stesso account vedono e aggiornano **gli stessi
-  dati in tempo reale**. Appena accendi/spegni un elettrodomestico, cambi
-  casa o modifichi un limite, la modifica viene pubblicata subito su un
-  piccolo database condiviso (Firebase Realtime Database) e arriva a
-  tutti gli altri dispositivi collegati, senza bisogno di ricaricare la
-  pagina.
+- **Registrazione**: chiunque può creare un nuovo gruppo vacanza dal
+  pulsante 🔐 → scheda "Nuovo gruppo", scegliendo un nome gruppo, il
+  proprio nome e una password. Il nome gruppo diventa l'identificativo
+  univoco usato per accedere (es. "leanime").
+- **Login**: chi conosce nome gruppo e password entra e da quel momento
+  vede e aggiorna **gli stessi dati in tempo reale** di tutti gli altri
+  dispositivi collegati allo stesso gruppo. Ogni modifica (interruttore
+  acceso/spento, nuova casa, nuovo limite) viene pubblicata subito su
+  Firebase Realtime Database e arriva a tutti, senza ricaricare la pagina.
+- **Profilo** (pulsante 👤, visibile dopo il login): permette di cambiare
+  il nome visualizzato del gruppo, il proprio nome, l'emoji e la password.
+  L'ID del gruppo (usato internamente per il login) non è modificabile.
 
-Il pulsante 🔐 in alto apre il login; una volta dentro diventa ⎋ per
-uscire dal gruppo (i dati restano comunque salvati in locale anche dopo
-il logout).
+Il pulsante 🔐/⎋ in alto apre il login o effettua il logout (i dati
+restano comunque salvati in locale anche dopo il logout).
+
+**Nota sulla sicurezza**: la password non viene mai salvata in chiaro
+(solo hash + salt casuale calcolati nel browser), ma essendo un sito
+statico senza un vero server, il controllo avviene lato client: chi
+conoscesse l'indirizzo del database potrebbe in teoria leggere i record
+degli account. Va bene per un piccolo gruppo di fiducia (famiglia/amici),
+non per dati sensibili. Non esiste un recupero password: se viene persa
+va creato un nuovo gruppo (o modificata a mano dalla console Firebase).
 
 ## Impostazione della sincronizzazione di gruppo (una volta sola)
 
@@ -57,8 +69,14 @@ progetto**, non su ogni dispositivo:
    ```json
    {
      "rules": {
+       "accounts": {
+         "$groupSlug": {
+           ".read": true,
+           ".write": true
+         }
+       },
        "groups": {
-         "leanime": {
+         "$groupSlug": {
            ".read": true,
            ".write": true
          }
@@ -70,14 +88,12 @@ progetto**, non su ogni dispositivo:
      }
    }
    ```
+   (`accounts/` contiene gli account dei gruppi registrati, `groups/`
+   contiene i dati condivisi di ciascun gruppo — uno per ogni nome
+   gruppo registrato, non più uno fisso.)
 6. Carica `js/firebaseConfig.js` aggiornato sul repository GitHub (o
-   Pages). Da quel momento, chiunque faccia login nell'app vede subito i
-   dati condivisi, senza configurare nulla sul proprio dispositivo.
-
-**Nota sulla sicurezza**: non essendoci un vero server, questa modalità
-resta adatta a un piccolo gruppo di fiducia (protetto dalla password di
-login), non a dati sensibili: chiunque conoscesse l'indirizzo del
-database potrebbe in teoria leggerlo o scriverlo.
+   Pages). Da quel momento, chiunque può registrare il proprio gruppo e
+   accedervi da qualsiasi dispositivo, senza configurare nulla in più.
 
 ## Struttura del progetto
 
@@ -89,9 +105,10 @@ vacation-power/
 │   └── style.css         Stile grafico
 ├── js/
 │   ├── defaultData.js    Elenco predefinito di elettrodomestici
-│   ├── storage.js        Salvataggio locale + login + esportazione/importazione JSON
+│   ├── storage.js        Salvataggio locale + sessione + esportazione/importazione JSON
 │   ├── firebaseConfig.js Configurazione del database condiviso (da compilare una volta)
-│   ├── groupSync.js      Sincronizzazione in tempo reale tra dispositivi loggati
+│   ├── groupAuth.js      Registrazione, login e profilo del gruppo
+│   ├── groupSync.js      Sincronizzazione in tempo reale dei dati tra dispositivi loggati
 │   ├── gauge.js          Disegno del quadrante circolare
 │   └── app.js            Logica dell'interfaccia
 └── icons/                Icone dell'app
