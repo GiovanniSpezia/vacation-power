@@ -2,6 +2,12 @@
  * app.js
  * Logica principale: gestisce lo stato, il rendering dell'interfaccia
  * e tutti gli eventi utente.
+ *
+ * Sincronizzazione: senza login l'app funziona sempre e solo in locale
+ * (localStorage, per dispositivo). Con login nell'account di gruppo,
+ * ogni modifica viene anche pubblicata in tempo reale sul database
+ * condiviso (js/groupSync.js), e ogni modifica fatta da altri
+ * dispositivi loggati arriva qui automaticamente.
  */
 
 let state = Storage.load();
@@ -47,20 +53,8 @@ const importBtn = el("importBtn");
 const importFileInput = el("importFileInput");
 const resetBtn = el("resetBtn");
 
-const githubSyncOwnerInput = el("githubSyncOwner");
-const githubSyncRepoInput = el("githubSyncRepo");
-const githubSyncBranchInput = el("githubSyncBranch");
-const githubSyncPathInput = el("githubSyncPath");
-const githubSyncTokenInput = el("githubSyncToken");
-const githubSyncAutoInput = el("githubSyncAuto");
-const githubSyncSaveBtn = el("githubSyncSaveBtn");
-const githubSyncPullBtn = el("githubSyncPullBtn");
-const githubSyncPushBtn = el("githubSyncPushBtn");
-const githubSyncClearBtn = el("githubSyncClearBtn");
-const githubSyncTestBtn = el("githubSyncTestBtn");
-const githubSyncStatus = el("githubSyncStatus");
-
 const authBtn = el("authBtn");
+const syncIndicator = el("syncIndicator");
 const themeToggle = el("themeToggle");
 
 const modalBackdrop = el("modalBackdrop");
@@ -73,63 +67,49 @@ const toastEl = el("toast");
 
 Gauge.init(gaugeRing, gaugeValue, gaugeUnit);
 
-let gitHubSyncConfig = Storage.loadGitHubSyncConfig();
-let gitHubRemoteSha = null;
-let gitHubSyncTimer = null;
-let gitHubSyncBusy = false;
-let gitHubPollTimer = null;
+// ---------- Sincronizzazione di gruppo (solo se loggato) ----------
+function setSyncIndicator(text, tone) {
+  if (!syncIndicator) return;
+  if (!text) {
+    syncIndicator.hidden = true;
+    return;
+  }
+  syncIndicator.hidden = false;
+  syncIndicator.textContent = text;
+  syncIndicator.dataset.tone = tone || "info";
+}
 
-const GITHUB_POLL_INTERVAL_MS = 20000;
+/** Riceve uno stato aggiornato dal gruppo (arrivato da un altro dispositivo) e lo applica. */
+function handleRemoteGroupState(remoteState) {
+  state = remoteState;
+  Storage.save(state);
+  renderAll();
+  setSyncIndicator("Sincronizzato con il gruppo", "success");
+}
 
-/**
- * Se l'utente è loggato nel gruppo e su questo dispositivo non è mai
- * stata impostata una destinazione di sync, la precompila da sola con
- * i valori predefiniti del gruppo (owner/repo/branch/percorso).
- * Il token resta vuoto: va incollato una sola volta per dispositivo se
- * si vuole anche SALVARE le modifiche (per leggere basta il repository
- * pubblico, senza alcun token).
- */
-function ensureGroupSyncConfig() {
+function connectGroupSync() {
   if (!isAuthenticated) return;
-  if (!gitHubSyncConfig) {
-    gitHubSyncConfig = Storage.defaultGroupSyncConfig();
-    Storage.saveGitHubSyncConfig(gitHubSyncConfig);
+  if (!GroupSync.isAvailable()) {
+    setSyncIndicator("Sync di gruppo non configurata", "warning");
+    return;
   }
-  refreshGitHubSyncForm();
+  setSyncIndicator("Connessione al gruppo...", "info");
+  GroupSync.start(handleRemoteGroupState, state);
+  setSyncIndicator("Sincronizzato con il gruppo", "success");
 }
 
-function startGitHubPolling() {
-  stopGitHubPolling();
-  gitHubPollTimer = setInterval(() => {
-    if (!isAuthenticated || !gitHubSyncConfig || document.hidden) return;
-    pullStateFromGitHub({ silent: true }).catch((error) => {
-      console.error(error);
-    });
-  }, GITHUB_POLL_INTERVAL_MS);
+function disconnectGroupSync() {
+  GroupSync.stop();
+  setSyncIndicator(null);
 }
-
-function stopGitHubPolling() {
-  if (gitHubPollTimer) {
-    clearInterval(gitHubPollTimer);
-    gitHubPollTimer = null;
-  }
-}
-
-// Se torni sulla scheda del browser (o riaccendi lo schermo), controlla
-// subito se qualcun altro del gruppo ha aggiornato i dati.
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && isAuthenticated && gitHubSyncConfig) {
-    pullStateFromGitHub({ silent: true }).catch((error) => console.error(error));
-  }
-});
 
 // ---------- Auth ----------
 function setAuthState(authed) {
   isAuthenticated = authed;
   if (authBtn) {
     authBtn.textContent = authed ? "⎋" : "🔐";
-    authBtn.title = authed ? "Esci" : "Accedi";
-    authBtn.setAttribute("aria-label", authed ? "Esci" : "Accedi");
+    authBtn.title = authed ? "Esci dal gruppo" : "Accedi al gruppo";
+    authBtn.setAttribute("aria-label", authed ? "Esci dal gruppo" : "Accedi al gruppo");
   }
 }
 
@@ -141,136 +121,9 @@ function showLoginError(message) {
   if (loginError) loginError.textContent = message;
 }
 
-function setGitHubSyncStatus(message, tone = "info") {
-  if (!githubSyncStatus) return;
-  // For long messages (esp. auth issues) show a compact message and a
-  // contextual help block below.
-  githubSyncStatus.textContent = message;
-  githubSyncStatus.dataset.tone = tone;
-  // If it's an authentication problem, append actionable steps.
-  if (tone === "error" && /Requires authentication|401|non valido|invalid/i.test(message)) {
-    const helper = " Per favore: 1) crea un token fine-grained su GitHub con permessi 'Contents: read and write' per questo repo; 2) incollalo nel campo 'Token GitHub'; 3) premi 'Salva config' e poi 'Carica su GitHub'.";
-    githubSyncStatus.textContent = message + helper;
-  }
-}
-
-function refreshGitHubSyncForm() {
-  if (!githubSyncOwnerInput || !githubSyncRepoInput || !githubSyncBranchInput || !githubSyncPathInput || !githubSyncTokenInput || !githubSyncAutoInput) return;
-  const cfg = gitHubSyncConfig || {};
-  githubSyncOwnerInput.value = cfg.owner || "";
-  githubSyncRepoInput.value = cfg.repo || "";
-  githubSyncBranchInput.value = cfg.branch || "main";
-  githubSyncPathInput.value = cfg.path || "data/vacation-power-state.json";
-  githubSyncTokenInput.value = cfg.token || "";
-  githubSyncAutoInput.checked = cfg.autoSync !== false;
-}
-
-function readGitHubSyncForm() {
-  return Storage._normalizeGitHubSyncConfig({
-    owner: githubSyncOwnerInput ? githubSyncOwnerInput.value : "",
-    repo: githubSyncRepoInput ? githubSyncRepoInput.value : "",
-    branch: githubSyncBranchInput ? githubSyncBranchInput.value : "main",
-    path: githubSyncPathInput ? githubSyncPathInput.value : "",
-    token: githubSyncTokenInput ? githubSyncTokenInput.value : "",
-    autoSync: githubSyncAutoInput ? githubSyncAutoInput.checked : true
-  });
-}
-
-function queueGitHubAutoPush() {
-  if (!gitHubSyncConfig || gitHubSyncConfig.autoSync === false || !isAuthenticated) return;
-  clearTimeout(gitHubSyncTimer);
-  gitHubSyncTimer = setTimeout(() => {
-    pushStateToGitHub({ silent: true }).catch((error) => {
-      console.error(error);
-      setGitHubSyncStatus(error.message || "Sync GitHub non riuscita.", "error");
-    });
-  }, 1200);
-}
-
-async function pullStateFromGitHub({ silent = false } = {}) {
-  const cfg = gitHubSyncConfig;
-  if (!cfg || gitHubSyncBusy) return null;
-  gitHubSyncBusy = true;
-  try {
-    const remote = await Storage.loadGitHubState(cfg);
-    if (!remote.state) {
-      gitHubRemoteSha = remote.sha || null;
-      if (cfg.autoSync !== false) {
-        await pushStateToGitHub({ silent: true, ignoreBusy: true });
-        if (!silent) showToast("Archivio GitHub creato dal salvataggio locale.");
-        setGitHubSyncStatus("Archivio GitHub creato dal salvataggio locale.", "success");
-      } else {
-        setGitHubSyncStatus("File GitHub non ancora creato.", "warning");
-      }
-      return null;
-    }
-
-    gitHubRemoteSha = remote.sha || null;
-    const remoteUpdatedAt = new Date(remote.state.updatedAt || 0).getTime();
-    const localUpdatedAt = new Date(state.updatedAt || 0).getTime();
-    if (!state.updatedAt || remoteUpdatedAt >= localUpdatedAt) {
-      state = remote.state;
-      Storage.save(state);
-      renderAll();
-      if (!silent) showToast("Dati sincronizzati da GitHub.");
-      setGitHubSyncStatus("Sincronizzato da GitHub.", "success");
-    } else if (cfg.autoSync !== false) {
-      await pushStateToGitHub({ silent: true, ignoreBusy: true });
-      if (!silent) showToast("Dati locali caricati su GitHub.");
-      setGitHubSyncStatus("Dati locali caricati su GitHub.", "success");
-    } else if (!silent) {
-      setGitHubSyncStatus("Hai dati locali più recenti. Caricali su GitHub.", "warning");
-    }
-    return remote.state;
-  } finally {
-    gitHubSyncBusy = false;
-  }
-}
-
-async function pushStateToGitHub({ silent = false, ignoreBusy = false, isRetry = false } = {}) {
-  const cfg = gitHubSyncConfig;
-  if (!cfg || (gitHubSyncBusy && !ignoreBusy)) return null;
-  gitHubSyncBusy = true;
-  try {
-    const nextState = {
-      ...state,
-      updatedAt: new Date().toISOString()
-    };
-    state = nextState;
-    Storage.save(state);
-    const result = await Storage.saveGitHubState(cfg, nextState, gitHubRemoteSha);
-    gitHubRemoteSha = result?.content?.sha || result?.content?.commit?.sha || gitHubRemoteSha;
-    if (!silent) showToast("Dati caricati su GitHub.");
-    setGitHubSyncStatus("Sincronizzato con GitHub.", "success");
-    return result;
-  } catch (error) {
-    const isConflict = /409/.test(error.message || "");
-    if (isConflict && !isRetry) {
-      // Qualcun altro ha salvato nel frattempo: scarico la sua versione
-      // più recente e riprovo una sola volta a caricare la mia.
-      gitHubSyncBusy = false;
-      try {
-        await pullStateFromGitHub({ silent: true });
-        return await pushStateToGitHub({ silent, ignoreBusy: true, isRetry: true });
-      } catch (retryError) {
-        setGitHubSyncStatus(retryError.message || "Caricamento su GitHub non riuscito.", "error");
-        throw retryError;
-      }
-    }
-    setGitHubSyncStatus(error.message || "Caricamento su GitHub non riuscito.", "error");
-    throw error;
-  } finally {
-    gitHubSyncBusy = false;
-  }
-}
-
 setAuthState(isAuthenticated);
 
 if (loginUser) loginUser.value = "";
-
-if (isAuthenticated) {
-  clearLoginError();
-}
 
 function openLogin() {
   clearLoginError();
@@ -292,14 +145,14 @@ function closeLogin() {
 if (authBtn) {
   authBtn.addEventListener("click", () => {
     if (isAuthenticated) {
-      stopGitHubPolling();
+      disconnectGroupSync();
       Storage.clearSession();
       setAuthState(false);
       clearLoginError();
       if (loginPassword) loginPassword.value = "";
       if (loginUser) loginUser.value = "";
       closeLogin();
-      showToast("Disconnesso.");
+      showToast("Disconnesso dal gruppo. I dati restano salvati su questo dispositivo.");
       return;
     }
     openLogin();
@@ -333,20 +186,14 @@ if (loginForm) {
     if (loginUser) loginUser.value = "";
     clearLoginError();
     closeLogin();
-    renderAll();
-    showToast("Accesso effettuato.");
+    showToast("Accesso effettuato: sincronizzazione con il gruppo attiva.");
+    connectGroupSync();
+  });
+}
 
-    // Appena entri nel gruppo, collega automaticamente questo
-    // dispositivo all'archivio condiviso e scarica subito ciò che
-    // hanno inserito gli altri, poi resta in ascolto periodicamente.
-    ensureGroupSyncConfig();
-    if (gitHubSyncConfig) {
-      pullStateFromGitHub({ silent: true }).catch((error) => {
-        console.error(error);
-        setGitHubSyncStatus(error.message || "Impossibile sincronizzare con GitHub.", "error");
-      });
-      startGitHubPolling();
-    }
+if (loginScreen) {
+  loginScreen.addEventListener("click", (e) => {
+    if (e.target === loginScreen) closeLogin();
   });
 }
 
@@ -360,7 +207,9 @@ function persist() {
   if (p) p.updatedAt = new Date().toISOString();
   state.updatedAt = new Date().toISOString();
   Storage.save(state);
-  queueGitHubAutoPush();
+  if (isAuthenticated) {
+    GroupSync.queuePush(state);
+  }
 }
 
 function wattsToAmps(watts) {
@@ -390,74 +239,6 @@ themeToggle.addEventListener("click", () => {
   applyTheme();
   persist();
 });
-
-if (githubSyncSaveBtn) {
-  githubSyncSaveBtn.addEventListener("click", async () => {
-    const cfg = readGitHubSyncForm();
-    if (!cfg) {
-      setGitHubSyncStatus("Compila owner, repo e file JSON.", "error");
-      return;
-    }
-    gitHubSyncConfig = cfg;
-    Storage.saveGitHubSyncConfig(cfg);
-    setGitHubSyncStatus("Configurazione salvata.", "success");
-    await pullStateFromGitHub({ silent: true }).catch((error) => {
-      console.error(error);
-      setGitHubSyncStatus(error.message || "Impossibile leggere da GitHub.", "error");
-    });
-  });
-}
-
-if (githubSyncPullBtn) {
-  githubSyncPullBtn.addEventListener("click", () => {
-    pullStateFromGitHub({ silent: false }).catch((error) => {
-      console.error(error);
-      setGitHubSyncStatus(error.message || "Impossibile scaricare da GitHub.", "error");
-    });
-  });
-}
-
-if (githubSyncTestBtn) {
-  githubSyncTestBtn.addEventListener("click", async () => {
-    const cfg = readGitHubSyncForm();
-    if (!cfg) {
-      setGitHubSyncStatus("Compila owner, repo e file JSON.", "error");
-      return;
-    }
-    setGitHubSyncStatus("Verifico token e accesso al file...", "info");
-    try {
-      const remote = await Storage.loadGitHubState(cfg);
-      if (!remote.state) {
-        setGitHubSyncStatus("Token valido: file remoto non trovato (può essere creato con 'Carica su GitHub').", "success");
-      } else {
-        const sha = (remote.sha || (remote.content && remote.content.sha)) || "(sha non disponibile)";
-        setGitHubSyncStatus(`Token valido: file raggiunto. SHA: ${sha}` , "success");
-      }
-    } catch (err) {
-      console.error(err);
-      setGitHubSyncStatus(err.message || "Verifica fallita.", "error");
-    }
-  });
-}
-
-if (githubSyncPushBtn) {
-  githubSyncPushBtn.addEventListener("click", () => {
-    pushStateToGitHub({ silent: false }).catch((error) => {
-      console.error(error);
-      setGitHubSyncStatus(error.message || "Impossibile caricare su GitHub.", "error");
-    });
-  });
-}
-
-if (githubSyncClearBtn) {
-  githubSyncClearBtn.addEventListener("click", () => {
-    gitHubSyncConfig = null;
-    gitHubRemoteSha = null;
-    Storage.clearGitHubSyncConfig();
-    refreshGitHubSyncForm();
-    setGitHubSyncStatus("Sincronizzazione GitHub disattivata.", "warning");
-  });
-}
 
 // ---------- Modal generico (usato per nuova casa / rinomina) ----------
 function openModal({ title, placeholder = "", value = "", onConfirm }) {
@@ -777,17 +558,12 @@ function renderStatus() {
     ? Math.max(0, wattsToAmps(availableWatt)).toFixed(1) + " A"
     : Math.max(0, availableWatt / 1000).toFixed(2) + " kW";
   const limitDisplay = p.unit === "A"
-    ? currentLimitKwAsUnitValue() + " A"
-    : currentLimitKwAsUnitValue() + " kW";
+    ? p.limitKw + " A"
+    : p.limitKw + " kW";
 
   statAvailable.textContent = availableDisplay;
   statLimit.textContent = limitDisplay;
   statCount.textContent = p.appliances.filter((a) => a.on).length;
-}
-
-function currentLimitKwAsUnitValue() {
-  const p = activeProfile();
-  return p.unit === "A" ? p.limitKw : p.limitKw;
 }
 
 // ---------- Import / Export ----------
@@ -819,9 +595,7 @@ importFileInput.addEventListener("change", async (e) => {
       state.profiles[profile.id] = profile;
       state.activeProfileId = profile.id;
     }
-    state.updatedAt = new Date().toISOString();
-    Storage.save(state);
-    queueGitHubAutoPush();
+    persist();
     renderAll();
     showToast("Importazione completata.");
   } catch (err) {
@@ -834,7 +608,6 @@ importFileInput.addEventListener("change", async (e) => {
 
 // ---------- Render generale ----------
 function renderAll() {
-  if (!isAuthenticated) return;
   renderProfileSelect();
   renderUnitToggle();
   renderLimitControls();
@@ -842,25 +615,10 @@ function renderAll() {
   renderStatus();
 }
 
+// ---------- Avvio ----------
 applyTheme();
-refreshGitHubSyncForm();
+renderAll();
+
 if (isAuthenticated) {
-  renderAll();
-  ensureGroupSyncConfig();
-}
-
-if (gitHubSyncConfig && isAuthenticated) {
-  pullStateFromGitHub({ silent: true }).catch((error) => {
-    console.error(error);
-    setGitHubSyncStatus(error.message || "Impossibile sincronizzare con GitHub.", "error");
-  });
-  startGitHubPolling();
-}
-
-if (loginScreen) {
-  loginScreen.addEventListener("click", (e) => {
-    if (e.target === loginScreen) {
-      closeLogin();
-    }
-  });
+  connectGroupSync();
 }

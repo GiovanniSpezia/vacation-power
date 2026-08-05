@@ -1,36 +1,22 @@
 /**
  * storage.js
- * Gestisce il salvataggio dei dati in localStorage (persistenza locale,
- * funziona anche offline e a doppio click sul file) e l'esportazione /
- * importazione in formato JSON (utile per fare backup, spostare i dati
- * su un altro dispositivo, o versionarli in un repository GitHub, dato
- * che un sito statico su GitHub Pages non ha un database server).
+ * Gestisce il salvataggio dei dati:
+ * - in locale (localStorage), sempre e comunque, per ogni dispositivo;
+ * - la definizione dell'account del gruppo usato per il login condiviso
+ *   (la sincronizzazione vera e propria tra dispositivi loggati è
+ *   gestita da js/groupSync.js tramite Firebase).
+ * Gestisce inoltre l'esportazione/importazione manuale in formato JSON,
+ * utile per backup o per spostare i dati a mano tra dispositivi.
  */
 
 const STORAGE_KEY = "vacationPowerData_v1";
 const AUTH_SESSION_KEY = "vacationPowerAuthSession_v1";
-const GITHUB_SYNC_KEY = "vacationPowerGitHubSync_v1";
 const AUTH_ACCOUNT = {
   username: "leanime",
   salt: "vacation-power-leanime-salt-v1",
   passwordHash: "2b92d985d527ea9b43907e178f6c5f89b0035c6d0a4d69363b26ded6e0886749"
 };
 const AUTH_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
-
-// Destinazione condivisa di default per il gruppo "leanime": appena si
-// fa login e non c'è già una configurazione salvata su questo
-// dispositivo, l'app punta automaticamente qui, senza bisogno di
-// inserire owner/repo/percorso a mano su ogni telefono/PC.
-// Il token invece resta personale e va incollato una volta per
-// dispositivo (serve solo per SALVARE le modifiche, non per leggerle
-// se il repository è pubblico).
-const GROUP_SYNC_DEFAULTS = {
-  owner: "GiovanniSpezia",
-  repo: "vacation-power",
-  branch: "main",
-  path: "data/group-leanime-state.json",
-  autoSync: true
-};
 
 function generateId() {
   return "p-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
@@ -65,6 +51,7 @@ const Storage = {
     return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
   },
 
+  /** Stato locale del dispositivo (usato sempre come cache, con o senza login) */
   load() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
@@ -83,147 +70,6 @@ const Storage = {
 
   save(state) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  },
-
-  /** Configurazione di sync predefinita per il gruppo, senza token (personale per dispositivo). */
-  defaultGroupSyncConfig() {
-    return { ...GROUP_SYNC_DEFAULTS, token: "" };
-  },
-
-  loadGitHubSyncConfig() {
-    const raw = localStorage.getItem(GITHUB_SYNC_KEY);
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw);
-      return this._normalizeGitHubSyncConfig(parsed);
-    } catch (e) {
-      return null;
-    }
-  },
-
-  saveGitHubSyncConfig(config) {
-    localStorage.setItem(GITHUB_SYNC_KEY, JSON.stringify(this._normalizeGitHubSyncConfig(config)));
-  },
-
-  clearGitHubSyncConfig() {
-    localStorage.removeItem(GITHUB_SYNC_KEY);
-  },
-
-  _normalizeGitHubSyncConfig(config) {
-    if (!config) return null;
-    const owner = (config.owner || "").trim();
-    const repo = (config.repo || "").trim();
-    const branch = (config.branch || "main").trim() || "main";
-    const path = this._normalizeGitHubPath(config.path || "");
-    const token = (config.token || "").trim();
-    const autoSync = config.autoSync !== false;
-    if (!owner || !repo || !path) return null;
-    return { owner, repo, branch, path, token, autoSync };
-  },
-
-  _normalizeGitHubPath(path) {
-    return String(path || "")
-      .trim()
-      .replace(/^\/+/, "")
-      .replace(/\s+/g, "-");
-  },
-
-  _githubContentsUrl(config) {
-    return `https://api.github.com/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${config.path}?ref=${encodeURIComponent(config.branch || "main")}`;
-  },
-
-  _githubHeaders(token) {
-    const headers = {
-      "Accept": "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28"
-    };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return headers;
-  },
-
-  _toBase64Utf8(text) {
-    const bytes = new TextEncoder().encode(text);
-    let binary = "";
-    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
-    return btoa(binary);
-  },
-
-  _fromBase64Utf8(base64) {
-    const binary = atob(base64.replace(/\n/g, ""));
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return new TextDecoder().decode(bytes);
-  },
-
-  async loadGitHubState(config) {
-    const normalized = this._normalizeGitHubSyncConfig(config);
-    if (!normalized) throw new Error("Configurazione GitHub non valida.");
-
-    const response = await fetch(this._githubContentsUrl(normalized), {
-      headers: this._githubHeaders(normalized.token)
-    });
-
-    if (response.status === 404) {
-      return { state: null, sha: null };
-    }
-
-    if (!response.ok) {
-      const body = await response.text();
-      if (response.status === 401) {
-        throw new Error('Errore GitHub 401: Requires authentication. Inserisci un token GitHub valido con permessi di "Contents: read and write" per questo repository.');
-      }
-      if (response.status === 403) {
-        throw new Error('Errore GitHub 403: Accesso negato. Controlla che il token abbia i permessi necessari e che il branch sia corretto.');
-      }
-      throw new Error(`Errore GitHub ${response.status}: ${body}`);
-    }
-
-    const payload = await response.json();
-    if (!payload.content) {
-      return { state: null, sha: payload.sha || null };
-    }
-
-    const jsonText = this._fromBase64Utf8(payload.content);
-    return {
-      state: JSON.parse(jsonText),
-      sha: payload.sha || null
-    };
-  },
-
-  async saveGitHubState(config, state, sha = null) {
-    const normalized = this._normalizeGitHubSyncConfig(config);
-    if (!normalized) throw new Error("Configurazione GitHub non valida.");
-
-    const payload = {
-      message: `Update vacation-power state ${new Date().toISOString()}`,
-      content: this._toBase64Utf8(JSON.stringify(state, null, 2))
-    };
-
-    if (sha) payload.sha = sha;
-
-    const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(normalized.owner)}/${encodeURIComponent(normalized.repo)}/contents/${normalized.path}`, {
-      method: "PUT",
-      headers: {
-        ...this._githubHeaders(normalized.token),
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      if (response.status === 401) {
-        throw new Error('Errore GitHub 401: Requires authentication. Il token fornito non è valido o non ha i permessi richiesti.');
-      }
-      if (response.status === 422) {
-        throw new Error('Errore GitHub 422: Contenuto non valido o conflitto. Controlla che il file JSON sia valido e che lo SHA sia corretto.');
-      }
-      throw new Error(`Errore GitHub ${response.status}: ${body}`);
-    }
-
-    return response.json();
   },
 
   isSessionValid() {

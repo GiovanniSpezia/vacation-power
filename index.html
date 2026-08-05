@@ -56,7 +56,8 @@
       </div>
     </div>
     <div class="topbar-actions">
-      <button id="authBtn" class="icon-btn" title="Accedi" aria-label="Accedi">⎋</button>
+      <span id="syncIndicator" class="sync-indicator" hidden></span>
+      <button id="authBtn" class="icon-btn" title="Accedi" aria-label="Accedi">🔐</button>
       <button id="themeToggle" class="icon-btn" title="Cambia tema" aria-label="Cambia tema">🌙</button>
     </div>
   </div>
@@ -145,45 +146,9 @@
 
   <div class="card">
     <div class="card-header">
-      <h2>Sincronizzazione GitHub</h2>
+      <h2>Login di gruppo</h2>
     </div>
-    <div class="sync-grid">
-      <div>
-        <label for="githubSyncOwner">Owner</label>
-        <input type="text" id="githubSyncOwner" placeholder="es. tuo-username">
-      </div>
-      <div>
-        <label for="githubSyncRepo">Repository</label>
-        <input type="text" id="githubSyncRepo" placeholder="es. vacation-power">
-      </div>
-      <div>
-        <label for="githubSyncBranch">Branch</label>
-        <input type="text" id="githubSyncBranch" placeholder="main">
-      </div>
-      <div>
-        <label for="githubSyncPath">File JSON</label>
-        <input type="text" id="githubSyncPath" placeholder="data/vacation-power-state.json">
-      </div>
-      <div class="sync-token-col">
-        <label for="githubSyncToken">Token GitHub</label>
-        <input type="password" id="githubSyncToken" placeholder="fine-grained token con accesso contents">
-      </div>
-      <div class="sync-auto-row">
-        <label class="sync-checkbox">
-          <input type="checkbox" id="githubSyncAuto" checked>
-          <span>Sincronizza automaticamente i salvataggi</span>
-        </label>
-      </div>
-    </div>
-      <div class="footer-actions">
-      <button id="githubSyncSaveBtn" class="btn btn-outline">Salva config</button>
-      <button id="githubSyncTestBtn" class="btn btn-outline">Test token</button>
-      <button id="githubSyncPullBtn" class="btn btn-outline">Scarica da GitHub</button>
-      <button id="githubSyncPushBtn" class="btn btn-outline">Carica su GitHub</button>
-      <button id="githubSyncClearBtn" class="btn btn-outline">Disattiva sync</button>
-    </div>
-    <p id="githubSyncStatus" class="small-note sync-status">Configura il repository e un token con permessi su contents per usare GitHub come archivio condiviso tra PC e telefono.</p>
-    <p class="small-note">Al login nel gruppo questi campi si compilano da soli con l'archivio condiviso predefinito: ogni dispositivo vede subito ciò che gli altri hanno inserito, senza bisogno di configurare nulla. Il <strong>token</strong> invece è personale: se vuoi solo <em>vedere</em> gli aggiornamenti degli altri non serve; se vuoi anche <em>salvare</em> le tue modifiche (accendere/spegnere elettrodomestici in modo che gli altri lo vedano) incollalo una volta per dispositivo — resta solo nel browser locale, mai condiviso altrove. Usa un token fine-grained limitato al solo repository del progetto.</p>
+    <p class="small-note">Senza accesso, i dati restano salvati solo su questo dispositivo. Fai login con l'account del gruppo per vedere e condividere in tempo reale gli stessi dati con tutti gli altri dispositivi collegati con lo stesso account.</p>
   </div>
 
   <footer class="credits">
@@ -207,8 +172,13 @@
 
 <div id="toast" class="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
 <script src="js/defaultData.js"></script>
 <script src="js/storage.js"></script>
+<script src="js/firebaseConfig.js"></script>
+<script src="js/groupSync.js"></script>
 <script src="js/gauge.js"></script>
 <script src="js/app.js"></script>
 </body>

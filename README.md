@@ -20,67 +20,79 @@ manuale in tempo reale**:
    con lo stato: verde (tutto ok), giallo (vicino al limite), rosso
    (limite superato, spegni qualcosa).
 
-## Login di gruppo e sincronizzazione tra dispositivi
+## Salvataggio dei dati: locale vs gruppo
 
-L'app ha un accesso protetto da password per il gruppo.
+- **Senza login**: l'app funziona comunque, sempre. I dati (case,
+  elettrodomestici, limiti) restano salvati solo su quel dispositivo/
+  browser (`localStorage`). Ogni telefono/PC ha i propri dati,
+  indipendenti dagli altri.
+- **Con login** (account di gruppo `leanime`): tutti i dispositivi che
+  fanno accesso con lo stesso account vedono e aggiornano **gli stessi
+  dati in tempo reale**. Appena accendi/spegni un elettrodomestico, cambi
+  casa o modifichi un limite, la modifica viene pubblicata subito su un
+  piccolo database condiviso (Firebase Realtime Database) e arriva a
+  tutti gli altri dispositivi collegati, senza bisogno di ricaricare la
+  pagina.
 
-- **Senza login**: i dati restano salvati solo su quel dispositivo/browser
-  (localStorage). Nessuna condivisione con altri dispositivi.
-- **Con login**: appena entri, il dispositivo si collega automaticamente
-  all'archivio condiviso del gruppo su GitHub — owner, repository, branch
-  e percorso del file sono già configurati di default (vedi
-  `GROUP_SYNC_DEFAULTS` in `js/storage.js`), non serve inserirli a mano.
-  Da quel momento:
-  1. scarica subito lo stato più recente inserito da altri dispositivi;
-  2. ricontrolla automaticamente ogni 20 secondi, più un controllo
-     immediato ogni volta che torni sulla scheda del browser;
-  3. quando accendi/spegni un elettrodomestico, cambi casa o modifichi il
-     limite, l'app carica in automatico la modifica su GitHub, così gli
-     altri dispositivi la vedono al giro di controllo successivo.
+Il pulsante 🔐 in alto apre il login; una volta dentro diventa ⎋ per
+uscire dal gruppo (i dati restano comunque salvati in locale anche dopo
+il logout).
 
-Per **vedere** gli aggiornamenti degli altri non serve altro (se il
-repository è pubblico). Per **salvare** le tue modifiche (in modo che gli
-altri le vedano) serve un token GitHub personale, da incollare una sola
-volta nel pannello "Sincronizzazione GitHub" di quel dispositivo — resta
-solo nel browser locale, non viene mai condiviso altrove. Usa un token
-*fine-grained* con permessi `Contents: read and write` limitato al solo
-   repository del progetto.
+## Impostazione della sincronizzazione di gruppo (una volta sola)
 
-### Creare il token GitHub (procedura rapida)
+La sincronizzazione tra dispositivi usa **Firebase Realtime Database**
+(gratuito, di Google), perché un sito statico su GitHub Pages non ha un
+proprio server/database. Va configurato **una sola volta per tutto il
+progetto**, non su ogni dispositivo:
 
-1. Vai su GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens.
-2. Clicca "Generate new token".
-3. Seleziona l'account e scegli il repository usato dall'app.
-4. Nella sezione Permissions seleziona `Contents` → `Read & write` (solo per quel repository).
-5. Imposta una scadenza se lo desideri e genera il token.
-6. Copia il token immediatamente (non sarà mostrato di nuovo) e incollalo nel campo `Token GitHub` nell'app su ogni dispositivo dove vuoi poter salvare i dati.
+1. Vai su https://console.firebase.google.com e crea un progetto (anche
+   gratuito, es. "vacation-power").
+2. Nel menu apri **Realtime Database → Crea database**, scegli una
+   regione, avvialo in modalità "test".
+3. Vai su **Impostazioni progetto → Le tue app → Aggiungi app Web** (icona
+   `</>`), dagli un nome e registrala.
+4. Firebase mostrerà un oggetto `firebaseConfig`: copia quei valori dentro
+   `js/firebaseConfig.js` (nel repository), al posto dei segnaposto.
+5. In **Realtime Database → Regole** incolla:
+   ```json
+   {
+     "rules": {
+       "groups": {
+         "leanime": {
+           ".read": true,
+           ".write": true
+         }
+       },
+       "$other": {
+         ".read": false,
+         ".write": false
+       }
+     }
+   }
+   ```
+6. Carica `js/firebaseConfig.js` aggiornato sul repository GitHub (o
+   Pages). Da quel momento, chiunque faccia login nell'app vede subito i
+   dati condivisi, senza configurare nulla sul proprio dispositivo.
 
-Importante: il token permette all'app di scrivere nel repository. Non condividerlo: resta salvato solo nel browser del dispositivo.
-
-Se due dispositivi salvano quasi nello stesso istante, l'app scarica
-automaticamente l'ultima versione altrui e riprova a salvare la tua una
-volta prima di segnalare un errore.
-
-Puoi comunque usare i campi e i pulsanti manuali del pannello per puntare
-a un repository diverso, o per forzare scarica/carica immediati.
-
-Nota: il token viene salvato solo nel browser del dispositivo, non nel
-repository. Su un sito statico non esiste un modo sicuro per fare sync
-scrivendo su GitHub senza una credenziale di questo tipo — è il motivo
-per cui resta comunque un'operazione manuale una tantum per dispositivo.
+**Nota sulla sicurezza**: non essendoci un vero server, questa modalità
+resta adatta a un piccolo gruppo di fiducia (protetto dalla password di
+login), non a dati sensibili: chiunque conoscesse l'indirizzo del
+database potrebbe in teoria leggerlo o scriverlo.
 
 ## Struttura del progetto
 
 ```
 vacation-power/
-├── index.html          Pagina principale
-├── manifest.json        Per installare l'app sulla home del telefono
+├── index.html            Pagina principale
+├── manifest.json         Per installare l'app sulla home del telefono
 ├── css/
-│   └── style.css        Stile grafico
+│   └── style.css         Stile grafico
 ├── js/
-│   ├── defaultData.js   Elenco predefinito di elettrodomestici
-│   ├── storage.js       Salvataggio locale + esportazione/importazione JSON
+│   ├── defaultData.js    Elenco predefinito di elettrodomestici
+│   ├── storage.js        Salvataggio locale + login + esportazione/importazione JSON
+│   ├── firebaseConfig.js Configurazione del database condiviso (da compilare una volta)
+│   ├── groupSync.js      Sincronizzazione in tempo reale tra dispositivi loggati
 │   ├── gauge.js          Disegno del quadrante circolare
 │   └── app.js            Logica dell'interfaccia
-└── icons/               Icone dell'app
+└── icons/                Icone dell'app
 ```
