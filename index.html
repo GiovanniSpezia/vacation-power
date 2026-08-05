@@ -26,6 +26,12 @@
     <h1>Vacation Power</h1>
     <p class="login-lead">Entra nel tuo gruppo vacanza per vedere e condividere i dati in tempo reale con gli altri dispositivi, oppure creane uno nuovo.</p>
 
+    <div class="auth-chips">
+      <span>Login + registrazione</span>
+      <span>Profilo editabile</span>
+      <span>Fallback locale se il DB è bloccato</span>
+    </div>
+
     <div class="auth-tabs">
       <button type="button" id="tabLogin" class="auth-tab active">Accedi</button>
       <button type="button" id="tabRegister" class="auth-tab">Nuovo gruppo</button>
@@ -68,7 +74,7 @@
       <div id="registerError" class="login-error" aria-live="polite"></div>
     </form>
 
-    <p class="login-note">L'accesso è gestito lato client con password hashata. Su un sito statico non esiste una protezione forte lato server: usa questo login solo per un piccolo gruppo di fiducia, non per dati sensibili.</p>
+    <p class="login-note">L'accesso è gestito lato client con password hashata. Se Firebase non è configurato o blocca gli account, l'app salva il gruppo in locale su questo dispositivo così puoi comunque lavorare senza fermarti.</p>
   </div>
 </div>
 

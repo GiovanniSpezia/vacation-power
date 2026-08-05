@@ -18,6 +18,28 @@
  */
 
 const ACCOUNTS_PATH = "accounts";
+const LOCAL_ACCOUNTS_KEY = "vacationPowerAccounts_v1";
+
+function loadLocalAccounts() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_ACCOUNTS_KEY) || "{}");
+  } catch (err) {
+    return {};
+  }
+}
+
+function saveLocalAccounts(accounts) {
+  localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(accounts));
+}
+
+function normalizeAccount(account, slug) {
+  if (!account) return null;
+  return { ...account, slug: account.slug || slug, groupSlug: account.groupSlug || slug };
+}
+
+function isPermissionDeniedError(err) {
+  return String(err?.message || err || "").toLowerCase().includes("permission_denied");
+}
 
 const GroupAuth = {
   /** Trasforma un nome gruppo in un identificativo valido per Firebase (a-z0-9). */
@@ -46,9 +68,34 @@ const GroupAuth = {
     return firebase.database().ref(`${ACCOUNTS_PATH}/${slug}`);
   },
 
+  _localAccount(slug) {
+    const accounts = loadLocalAccounts();
+    return normalizeAccount(accounts[slug] || null, slug);
+  },
+
+  _saveLocalAccount(slug, account) {
+    const accounts = loadLocalAccounts();
+    accounts[slug] = normalizeAccount(account, slug);
+    saveLocalAccounts(accounts);
+    return accounts[slug];
+  },
+
+  _updateLocalAccount(slug, patch) {
+    const accounts = loadLocalAccounts();
+    if (!accounts[slug]) throw new Error("Account non trovato.");
+    accounts[slug] = { ...accounts[slug], ...patch, slug, groupSlug: slug };
+    saveLocalAccounts(accounts);
+    return accounts[slug];
+  },
+
   async accountExists(slug) {
-    const snap = await this._accountRef(slug).once("value");
-    return snap.exists();
+    try {
+      const snap = await this._accountRef(slug).once("value");
+      return snap.exists();
+    } catch (err) {
+      if (!isPermissionDeniedError(err)) throw err;
+      return !!this._localAccount(slug);
+    }
   },
 
   async register({ groupName, ownerName, password, confirmPassword, emoji }) {
@@ -74,25 +121,42 @@ const GroupAuth = {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    await this._accountRef(slug).set(account);
+    try {
+      await this._accountRef(slug).set(account);
+    } catch (err) {
+      if (!isPermissionDeniedError(err)) throw err;
+      this._saveLocalAccount(slug, account);
+    }
+    this._saveLocalAccount(slug, account);
     return account;
   },
 
   async login(groupName, password) {
     const slug = this.slugify(groupName);
     if (!slug) throw new Error("Inserisci il nome del gruppo.");
-    const snap = await this._accountRef(slug).once("value");
-    if (!snap.exists()) throw new Error("Gruppo non trovato. Controlla il nome oppure registrane uno nuovo.");
-    const account = snap.val();
+    let account = null;
+    try {
+      const snap = await this._accountRef(slug).once("value");
+      account = snap.exists() ? snap.val() : null;
+    } catch (err) {
+      if (!isPermissionDeniedError(err)) throw err;
+      account = this._localAccount(slug);
+    }
+    if (!account) account = this._localAccount(slug);
+    if (!account) throw new Error("Gruppo non trovato. Controlla il nome oppure registrane uno nuovo.");
     const candidateHash = await this._hash(password, account.passwordSalt);
     if (candidateHash !== account.passwordHash) throw new Error("Password errata.");
-    return { ...account, slug };
+    return normalizeAccount(account, slug);
   },
 
   async getAccount(slug) {
-    const snap = await this._accountRef(slug).once("value");
-    if (!snap.exists()) return null;
-    return { ...snap.val(), slug };
+    try {
+      const snap = await this._accountRef(slug).once("value");
+      if (snap.exists()) return normalizeAccount(snap.val(), slug);
+    } catch (err) {
+      if (!isPermissionDeniedError(err)) throw err;
+    }
+    return this._localAccount(slug);
   },
 
   /** Aggiorna nome gruppo / nome personale / emoji (non la password: usa changePassword). */
@@ -105,7 +169,12 @@ const GroupAuth = {
       emoji: emoji || "🏡",
       updatedAt: new Date().toISOString()
     };
-    await this._accountRef(slug).update(patch);
+    try {
+      await this._accountRef(slug).update(patch);
+    } catch (err) {
+      if (!isPermissionDeniedError(err)) throw err;
+    }
+    this._updateLocalAccount(slug, patch);
     return this.getAccount(slug);
   },
 
@@ -119,11 +188,17 @@ const GroupAuth = {
 
     const salt = this._randomSalt();
     const passwordHash = await this._hash(newPassword, salt);
-    await this._accountRef(slug).update({
+    const patch = {
       passwordSalt: salt,
       passwordHash,
       updatedAt: new Date().toISOString()
-    });
+    };
+    try {
+      await this._accountRef(slug).update(patch);
+    } catch (err) {
+      if (!isPermissionDeniedError(err)) throw err;
+    }
+    this._updateLocalAccount(slug, patch);
     return true;
   }
 };
