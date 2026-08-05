@@ -30,6 +30,7 @@ const closeLoginBtn = el("closeLoginBtn");
 const registerForm = el("registerForm");
 const registerGroupName = el("registerGroupName");
 const registerOwnerName = el("registerOwnerName");
+const registerEmoji = el("registerEmoji");
 const registerPassword = el("registerPassword");
 const registerPasswordConfirm = el("registerPasswordConfirm");
 const registerError = el("registerError");
@@ -47,6 +48,10 @@ const profileNewPassword = el("profileNewPassword");
 const profileNewPasswordConfirm = el("profileNewPasswordConfirm");
 const profileError = el("profileError");
 const closeProfileBtn = el("closeProfileBtn");
+const profileSummaryGroup = el("profileSummaryGroup");
+const profileSummaryOwner = el("profileSummaryOwner");
+const profileSummarySlug = el("profileSummarySlug");
+const profileSummaryEmoji = el("profileSummaryEmoji");
 
 const appShell = el("appShell");
 const profileSelect   = el("profileSelect");
@@ -203,17 +208,20 @@ function closeAuthScreen() {
 function openProfileScreen() {
   if (!currentGroup) return;
   clearProfileError();
-  if (profileGroupName) profileGroupName.value = currentGroup.groupName || "";
-  if (profileEmoji) profileEmoji.value = currentGroup.emoji || "🏡";
-  if (profileOwnerName) profileOwnerName.value = currentGroup.ownerName || "";
-  if (profileSlugDisplay) profileSlugDisplay.value = currentGroup.slug || "";
-  if (profileCurrentPassword) profileCurrentPassword.value = "";
-  if (profileNewPassword) profileNewPassword.value = "";
-  if (profileNewPasswordConfirm) profileNewPasswordConfirm.value = "";
-  if (profileScreen) {
-    profileScreen.classList.add("open");
-    profileScreen.setAttribute("aria-hidden", "false");
-  }
+  refreshCurrentGroup().finally(() => {
+    if (profileGroupName) profileGroupName.value = currentGroup?.groupName || "";
+    if (profileEmoji) profileEmoji.value = currentGroup?.emoji || "🏡";
+    if (profileOwnerName) profileOwnerName.value = currentGroup?.ownerName || "";
+    if (profileSlugDisplay) profileSlugDisplay.value = currentGroup?.slug || "";
+    if (profileCurrentPassword) profileCurrentPassword.value = "";
+    if (profileNewPassword) profileNewPassword.value = "";
+    if (profileNewPasswordConfirm) profileNewPasswordConfirm.value = "";
+    renderProfileSummary();
+    if (profileScreen) {
+      profileScreen.classList.add("open");
+      profileScreen.setAttribute("aria-hidden", "false");
+    }
+  });
 }
 
 function closeProfileScreen() {
@@ -284,13 +292,14 @@ if (registerForm) {
 
     const groupName = registerGroupName ? registerGroupName.value : "";
     const ownerName = registerOwnerName ? registerOwnerName.value : "";
+    const emoji = registerEmoji ? registerEmoji.value.trim() : "";
     const password = registerPassword ? registerPassword.value : "";
     const confirmPassword = registerPasswordConfirm ? registerPasswordConfirm.value : "";
 
     const submitBtn = registerForm.querySelector("button[type=submit]");
     if (submitBtn) submitBtn.disabled = true;
     try {
-      const account = await GroupAuth.register({ groupName, ownerName, password, confirmPassword, emoji: "🏡" });
+      const account = await GroupAuth.register({ groupName, ownerName, password, confirmPassword, emoji: emoji || "🏡" });
       await afterAuthSuccess(account);
       registerForm.reset();
       closeAuthScreen();
@@ -311,6 +320,22 @@ async function afterAuthSuccess(account) {
   Storage.setSession(account.slug);
   updateGroupUi();
   connectGroupSync(account.slug);
+}
+
+async function refreshCurrentGroup() {
+  if (!currentGroup?.slug) return null;
+  try {
+    const account = await GroupAuth.getAccount(currentGroup.slug);
+    if (account) {
+      currentGroup = account;
+      updateGroupUi();
+      renderProfileSummary();
+    }
+    return currentGroup;
+  } catch (err) {
+    console.error(err);
+    return currentGroup;
+  }
 }
 
 function logoutFromGroup() {
@@ -782,10 +807,25 @@ function renderAll() {
   renderStatus();
 }
 
+function renderProfileSummary() {
+  if (!currentGroup) {
+    if (profileSummaryGroup) profileSummaryGroup.textContent = "—";
+    if (profileSummaryOwner) profileSummaryOwner.textContent = "—";
+    if (profileSummarySlug) profileSummarySlug.textContent = "—";
+    if (profileSummaryEmoji) profileSummaryEmoji.textContent = "🏡";
+    return;
+  }
+  if (profileSummaryGroup) profileSummaryGroup.textContent = currentGroup.groupName || "—";
+  if (profileSummaryOwner) profileSummaryOwner.textContent = currentGroup.ownerName || "—";
+  if (profileSummarySlug) profileSummarySlug.textContent = currentGroup.slug || "—";
+  if (profileSummaryEmoji) profileSummaryEmoji.textContent = currentGroup.emoji || "🏡";
+}
+
 // ---------- Avvio ----------
 applyTheme();
 renderAll();
 updateGroupUi();
+renderProfileSummary();
 
 if (isAuthenticated && currentGroup) {
   // Sessione ricordata da una visita precedente: recupero i dati
@@ -795,6 +835,7 @@ if (isAuthenticated && currentGroup) {
       if (account) {
         currentGroup = account;
         updateGroupUi();
+        renderProfileSummary();
       }
       connectGroupSync(currentGroup.slug);
     })

@@ -52,6 +52,9 @@
       <label for="registerOwnerName">Il tuo nome</label>
       <input id="registerOwnerName" type="text" placeholder="Es. Giovanni" autocomplete="name" required>
 
+      <label for="registerEmoji">Emoji del gruppo</label>
+      <input id="registerEmoji" type="text" placeholder="🏡" maxlength="4">
+
       <label for="registerPassword">Password</label>
       <input id="registerPassword" type="password" placeholder="Almeno 4 caratteri" autocomplete="new-password" required>
 
@@ -75,6 +78,25 @@
     <div class="login-kicker">Il tuo profilo</div>
     <h1>Impostazioni gruppo</h1>
     <p class="login-lead">Modifica il nome del gruppo, il tuo nome o la password. Le modifiche sono visibili a tutti i dispositivi del gruppo.</p>
+
+    <div class="profile-summary">
+      <div class="profile-summary-item">
+        <span>Gruppo</span>
+        <strong id="profileSummaryGroup">—</strong>
+      </div>
+      <div class="profile-summary-item">
+        <span>Proprietario</span>
+        <strong id="profileSummaryOwner">—</strong>
+      </div>
+      <div class="profile-summary-item">
+        <span>ID login</span>
+        <strong id="profileSummarySlug">—</strong>
+      </div>
+      <div class="profile-summary-item">
+        <span>Emoji</span>
+        <strong id="profileSummaryEmoji">🏡</strong>
+      </div>
+    </div>
 
     <form id="profileForm" class="login-form">
       <label for="profileGroupName">Nome del gruppo (visibile)</label>
